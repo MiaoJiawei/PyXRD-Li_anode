@@ -1,0 +1,96 @@
+import numpy as np
+from scipy.interpolate import interp1d
+from scipy.signal import convolve
+from scipy.optimize import curve_fit
+from scipy.optimize import fsolve
+
+# 定义 Split-Pearson VII 函数
+def split_pearson_vii(x, a, x0, w_L, w_R, m):
+    """Split-Pearson VII 函数：两侧宽度不同的 Pearson VII 函数"""
+    return np.where(
+        x <= x0,
+        a / (1 + (4 * (x - x0)**2 / w_L**2) * (2**(1/m) - 1))**m,
+        a / (1 + (4 * (x - x0)**2 / w_R**2) * (2**(1/m) - 1))**m
+    )
+
+# 定义 Pseudo-Voigt 函数
+def pseudo_voigt(x, amplitude, center, sigma, eta):
+    """Pseudo Voigt 函数：高斯函数和洛伦兹函数的线性组合"""
+    gaussian = amplitude * np.exp(-((x - center) / sigma)**2)
+    lorentzian = amplitude / (1 + ((x - center) / sigma)**2)
+    return eta * lorentzian + (1 - eta) * gaussian
+
+# 定义双峰拟合函数（Split-Pearson VII 峰 + 三次背景）
+def double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2, c3):
+    """双峰拟合函数：两个 Split-Pearson VII 峰 + 三次背景"""
+    return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) +
+           split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) +
+           c0 + c1 * x + c2 * x**2 + c3 * x**3)
+
+# 计算 Split-Pearson VII 函数的半峰宽
+def calculate_fwhm_spv(w_L, w_R, m):
+    a = 1
+    x0 = 0
+    left_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 - w_L)[0]
+    right_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 + w_R)[0]
+    return right_x - left_x
+
+# 计算 Pseudo-Voigt 函数的半峰宽
+def calculate_fwhm_pv(sigma, eta):
+    fwhm_lorentz = 2 * sigma  # 洛伦兹成分的半峰宽
+    fwhm_gauss = 2 * sigma * np.sqrt(2 * np.log(2))  # 高斯成分的半峰宽
+    return eta * fwhm_lorentz + (1 - eta) * fwhm_gauss
+
+# 校正数据模块
+def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
+    """Kα2峰校正"""
+    sort_idx = np.argsort(two_theta)
+    two_theta_sorted = two_theta[sort_idx]
+    intensity_sorted = intensity[sort_idx]
+    
+    theta_rad = np.radians(two_theta_sorted / 2)
+    sin_theta_ka1 = np.sin(theta_rad)
+    sin_theta_ka2 = sin_theta_ka1 * (lambda_ka1 / lambda_ka2)
+    
+    valid = sin_theta_ka2 <= 1.0
+    theta_ka2_rad = np.arcsin(sin_theta_ka2, where=valid, out=np.zeros_like(sin_theta_ka2))
+    two_theta_ka2 = np.degrees(theta_ka2_rad) * 2
+    
+    corrected_intensity = intensity_sorted.copy()
+    
+    for _ in range(iterations):
+        ka1_interp = interp1d(two_theta_sorted, corrected_intensity, kind='linear', bounds_error=False, fill_value=0.0)
+        ka2_intensity = ka1_interp(two_theta_ka2) * 0.5
+        ka2_intensity *= valid
+        corrected_intensity = np.clip(intensity_sorted - ka2_intensity, 0, None)
+    
+    return two_theta_sorted, corrected_intensity
+
+# 拟合数据模块
+def fit_data(x, y):
+    """使用双峰模型拟合数据"""
+    p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(double_peak, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None#, None
+    
+# 拟合峰曲线
+def fit_peak(x, popt):
+    fitted_curve = double_peak(x, *popt)
+    background = popt[10] + popt[11] * x + popt[12] * x**2 + popt[13] * x**3
+    graphite_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
+    silicon_peak = split_pearson_vii(x, popt[5], popt[6], popt[7], popt[8], popt[9])
+
+    # 反卷积计算净石墨半峰宽
+    graphite_peak_shift = split_pearson_vii(x, popt[5], popt[6], popt[2], popt[3], popt[4])
+    initial_guess = [1.0, 28.4, 1.0, 0.5]
+    def convolution_model(x, amplitude, center, sigma, eta):
+        gtaphite_net = pseudo_voigt(x, amplitude, center, sigma, eta)
+        return convolve(silicon_peak, gtaphite_net, mode='same')
+    params, _ = curve_fit(convolution_model, x, graphite_peak_shift, p0=initial_guess)
+    fwhm = calculate_fwhm_pv(params[2], params[3])
+
+    return fitted_curve, background, graphite_peak, silicon_peak, fwhm
