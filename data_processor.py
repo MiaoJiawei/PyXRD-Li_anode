@@ -1,8 +1,11 @@
 import numpy as np
+
+from numpy.polynomial.chebyshev import Chebyshev
 from scipy.interpolate import interp1d
 from scipy.signal import convolve
 from scipy.optimize import curve_fit
 from scipy.optimize import fsolve
+
 
 # 定义 Split-Pearson VII 函数
 def split_pearson_vii(x: np.ndarray, a: float, x0: float, w_L: float, w_R: float, m: float) -> np.ndarray:
@@ -30,25 +33,27 @@ def pseudo_voigt(x: np.ndarray, amplitude: float, center: float, sigma: float, e
     lorentzian = amplitude / (1 + ((x - center) / sigma)**2)
     return eta * lorentzian + (1 - eta) * gaussian
 
-# 定义单峰拟合函数（Split-Pearson VII 峰 + 三次背景）
-def single_peak(x, a1, x01, w_L1, w_R1, m1, c0, c1, c2, c3):
-    # Split-Pearson VII 峰 + 三次背景
-    return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) +
-           c0 + c1 * x + c2 * x**2 + c3 * x**3)
+# 定义二阶切比雪夫多项式
+def chebyshev(x: np.ndarray, c0, c1, c2):
+    # 二阶切比雪夫多项式
+    return Chebyshev([c0, c1, c2])(x)
 
-# 定义双峰拟合函数（Split-Pearson VII 峰 + 三次背景）
-def double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2, c3):
-    # 两个 Split-Pearson VII 峰 + 三次背景
-    return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) +
-           split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) +
-           c0 + c1 * x + c2 * x**2 + c3 * x**3)
+#定义单峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+def single_peak(x: np.ndarray, a1, x01, w_L1, w_R1, m1, c0, c1, c2):
+    # Split-Pearson VII 峰 + 二阶切比雪夫背景
+    return split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + chebyshev(x, c0, c1, c2)
+
+# 定义双峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+def double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2):
+    # 两个 Split-Pearson VII 峰 + 二阶切比雪夫背景
+    return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) + chebyshev(x, c0, c1, c2))
 
 # 计算 Split-Pearson VII 函数的半峰宽
 def calculate_fwhm_spv(w_L, w_R, m):
     a = 1
     x0 = 0
-    left_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 - w_L)[0]
-    right_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 + w_R)[0]
+    left_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 - abs(w_L))[0]
+    right_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 + abs(w_R))[0]
     return right_x - left_x
 
 # 计算 Pseudo-Voigt 函数的半峰宽
@@ -57,9 +62,8 @@ def calculate_fwhm_pv(sigma, eta):
     fwhm_gauss = 2 * sigma * np.sqrt(2 * np.log(2))  # 高斯成分的半峰宽
     return eta * fwhm_lorentz + (1 - eta) * fwhm_gauss
 
-# 校正数据模块
+# 迭代法Kα2校正
 def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
-    # 迭代法Kα2校正
     sort_idx = np.argsort(two_theta)
     two_theta_sorted = two_theta[sort_idx]
     intensity_sorted = intensity[sort_idx]
@@ -82,10 +86,9 @@ def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, it
     
     return two_theta_sorted, corrected_intensity
 
-# 拟合数据模块
+# 双峰模型拟合数据
 def fit_data_d002(x, y):
-    # 使用双峰模型拟合数据
-    p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0, 0]
+    p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
         popt, _ = curve_fit(double_peak, x, y, p0=p0)
         return popt
@@ -93,10 +96,10 @@ def fit_data_d002(x, y):
         print(f"拟合失败: {e}")
         return None
     
-# 拟合峰曲线
+# 双峰曲线计算
 def fit_peak_d002(x, popt):
     fitted_curve = double_peak(x, *popt)
-    background = popt[10] + popt[11] * x + popt[12] * x**2 + popt[13] * x**3
+    background = chebyshev(x, popt[10], popt[11] , popt[12])
     graphite_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
     silicon_peak = split_pearson_vii(x, popt[5], popt[6], popt[7], popt[8], popt[9])
 
@@ -111,21 +114,19 @@ def fit_peak_d002(x, popt):
 
     return fitted_curve, background, graphite_peak, silicon_peak, fwhm
 
-# 拟合数据模块
+# 单峰模型拟合数据
 def fit_data_sifwhm(x, y):
-    # 使用单峰模型拟合数据
-    p0 = [max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0, 0]
+    p0 = [max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
         popt, _ = curve_fit(single_peak, x, y, p0=p0)
         return popt
     except RuntimeError as e:
         print(f"拟合失败: {e}")
         return None
-    
-# 拟合峰曲线
+
+# 单峰曲线计算
 def fit_peak_sifwhm(x, popt):
     fitted_curve = single_peak(x, *popt)
-    background = popt[5] + popt[6] * x + popt[7] * x**2 + popt[8] * x**3
+    background = chebyshev(x, popt[5], popt[6] , popt[7])
     silicon_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
-
     return fitted_curve, background, silicon_peak

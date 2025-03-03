@@ -1,14 +1,9 @@
 import os
 import numpy as np
+import data_reader as dr
+import data_processor as dp
 
 from openpyxl import Workbook
-from data_reader import get_reader
-from data_processor import correct_ka2
-from data_processor import fit_data_d002
-from data_processor import fit_peak_d002
-from data_processor import fit_data_sifwhm
-from data_processor import fit_peak_sifwhm
-from data_processor import calculate_fwhm_spv
 
 
 # Public function for create curve worksheet
@@ -33,7 +28,7 @@ if __name__ == "__main__":
     file_type = input("请选择文件类型（1: .rd, 2: .xrdml）: ").strip()
     calc_type = input("请选择计算类型（1: D002, 2: Si_FWHM）: ").strip()
     peak_output = input("是否输出拟合结果（1: Yes, 2: No）: ").strip()
-    reader = get_reader(file_type)
+    reader = dr.get_reader(file_type)
 
     # Get file list
     file_list = []
@@ -76,20 +71,17 @@ if __name__ == "__main__":
             scan_x, scan_y = reader.read_data(file_path)
             if (scan_x is not None)&(calc_type == "1"):
                 # Calculate graphite d002
-                corrected_x, corrected_y = correct_ka2(scan_x, scan_y)
-                mask = (corrected_x >= 24.2) & (corrected_x <= 30)
-                x_filtered = corrected_x[mask]
-                y_filtered = corrected_y[mask]
-                popt = fit_data_d002(x_filtered, y_filtered)
+                corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
+                popt = dp.fit_data_d002(corrected_x, corrected_y)
                 if popt is not None:
                     ws_res.cell(sam_index, 1).value = sample_name  # Sample name
                     ws_res.cell(sam_index, 2).value = d_002 = 1.54056/(2*np.sin(np.radians((28.443 - popt[6] + popt[1])/2)))  # Graphite D002 value
                     ws_res.cell(sam_index, 3).value = 100 * (3.440 - d_002)/(3.440 - 3.354)
                     #ws_res.cell(sam_index, 2).value = -0.1302 * (28.443 - popt[6] + popt[1]) + 6.8127  # Graphite D002 value
                     ws_res.cell(sam_index, 4).value = popt[1]  # Graphite D002 peak position
-                    ws_res.cell(sam_index, 5).value = calculate_fwhm_spv(popt[2], popt[3], popt[4])
+                    ws_res.cell(sam_index, 5).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])
                     ws_res.cell(sam_index, 6).value = popt[6]  # Silicon D111 peak position
-                    ws_res.cell(sam_index, 7).value = calculate_fwhm_spv(popt[7], popt[8], popt[9])
+                    ws_res.cell(sam_index, 7).value = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])
                     if peak_output == "1":
                         # Create worksheet
                         ws_raw = wb.create_sheet(sample_name)
@@ -104,7 +96,7 @@ if __name__ == "__main__":
                         ws_raw.cell(1, 1).value = 'Back'
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
                         # Calculate peak curves
-                        fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = fit_peak_d002(corrected_x, popt)
+                        fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(corrected_x, popt)
                         # Pushback peak curves
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)
@@ -116,15 +108,12 @@ if __name__ == "__main__":
                         ws_res.cell(sam_index, 8).value = fwhm_gn
             elif (scan_x is not None)&(calc_type == "2"):
                 # Calculate silicon fwhm
-                corrected_x, corrected_y = correct_ka2(scan_x, scan_y)
-                mask = (corrected_x >= 24.2) & (corrected_x <= 30)
-                x_filtered = corrected_x[mask]
-                y_filtered = corrected_y[mask]
-                popt = fit_data_sifwhm(x_filtered, y_filtered)
+                corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
+                popt = dp.fit_data_sifwhm(corrected_x, corrected_y)
                 if popt is not None:
                     ws_res.cell(sam_index, 1).value = sample_name  # Sample name
                     ws_res.cell(sam_index, 2).value = popt[1]  # Silicon D111 peak position
-                    ws_res.cell(sam_index, 3).value = calculate_fwhm_spv(popt[2], popt[3], popt[4])
+                    ws_res.cell(sam_index, 3).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])
                     if peak_output == "1":
                         # Create worksheet
                         ws_raw = wb.create_sheet(sample_name)
@@ -138,7 +127,7 @@ if __name__ == "__main__":
                         ws_raw.cell(1, 1).value = 'Back'
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
                         # Calculate peak curves
-                        fitted_curve, background, silicon_peak = fit_peak_sifwhm(corrected_x, popt)
+                        fitted_curve, background, silicon_peak = dp.fit_peak_sifwhm(corrected_x, popt)
                         # Pushback peak curves
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)
