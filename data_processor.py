@@ -5,24 +5,40 @@ from scipy.optimize import curve_fit
 from scipy.optimize import fsolve
 
 # 定义 Split-Pearson VII 函数
-def split_pearson_vii(x, a, x0, w_L, w_R, m):
-    """Split-Pearson VII 函数：两侧宽度不同的 Pearson VII 函数"""
+def split_pearson_vii(x: np.ndarray, a: float, x0: float, w_L: float, w_R: float, m: float) -> np.ndarray:
+    # Split-Pearson VII 函数：两侧具有同形状参数的 Pearson VII 函数
     return np.where(
         x <= x0,
         a / (1 + (4 * (x - x0)**2 / w_L**2) * (2**(1/m) - 1))**m,
         a / (1 + (4 * (x - x0)**2 / w_R**2) * (2**(1/m) - 1))**m
     )
 
+# 定义 Lorentzian 函数
+def lorentzian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
+    # Lorentzian 函数
+    return amplitude / (1 + ((x - center) / sigma)**2)
+
+# 定义 Gaussian 函数
+def lorentzian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
+    # Gaussian 函数
+    return amplitude * np.exp(-((x - center) / sigma)**2)
+
 # 定义 Pseudo-Voigt 函数
-def pseudo_voigt(x, amplitude, center, sigma, eta):
-    """Pseudo Voigt 函数：高斯函数和洛伦兹函数的线性组合"""
+def pseudo_voigt(x: np.ndarray, amplitude: float, center: float, sigma: float, eta: float) -> np.ndarray:
+    # Pseudo Voigt 函数：高斯函数和洛伦兹函数的线性组合
     gaussian = amplitude * np.exp(-((x - center) / sigma)**2)
     lorentzian = amplitude / (1 + ((x - center) / sigma)**2)
     return eta * lorentzian + (1 - eta) * gaussian
 
+# 定义单峰拟合函数（Split-Pearson VII 峰 + 三次背景）
+def single_peak(x, a1, x01, w_L1, w_R1, m1, c0, c1, c2, c3):
+    # Split-Pearson VII 峰 + 三次背景
+    return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) +
+           c0 + c1 * x + c2 * x**2 + c3 * x**3)
+
 # 定义双峰拟合函数（Split-Pearson VII 峰 + 三次背景）
 def double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2, c3):
-    """双峰拟合函数：两个 Split-Pearson VII 峰 + 三次背景"""
+    # 两个 Split-Pearson VII 峰 + 三次背景
     return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) +
            split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) +
            c0 + c1 * x + c2 * x**2 + c3 * x**3)
@@ -43,7 +59,7 @@ def calculate_fwhm_pv(sigma, eta):
 
 # 校正数据模块
 def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
-    """Kα2峰校正"""
+    # 迭代法Kα2校正
     sort_idx = np.argsort(two_theta)
     two_theta_sorted = two_theta[sort_idx]
     intensity_sorted = intensity[sort_idx]
@@ -67,18 +83,18 @@ def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, it
     return two_theta_sorted, corrected_intensity
 
 # 拟合数据模块
-def fit_data(x, y):
-    """使用双峰模型拟合数据"""
+def fit_data_d002(x, y):
+    # 使用双峰模型拟合数据
     p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0, 0]
     try:
         popt, _ = curve_fit(double_peak, x, y, p0=p0)
         return popt
     except RuntimeError as e:
         print(f"拟合失败: {e}")
-        return None#, None
+        return None
     
 # 拟合峰曲线
-def fit_peak(x, popt):
+def fit_peak_d002(x, popt):
     fitted_curve = double_peak(x, *popt)
     background = popt[10] + popt[11] * x + popt[12] * x**2 + popt[13] * x**3
     graphite_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
@@ -86,11 +102,30 @@ def fit_peak(x, popt):
 
     # 反卷积计算净石墨半峰宽
     graphite_peak_shift = split_pearson_vii(x, popt[5], popt[6], popt[2], popt[3], popt[4])
-    initial_guess = [1.0, 28.4, 1.0, 0.5]
-    def convolution_model(x, amplitude, center, sigma, eta):
-        gtaphite_net = pseudo_voigt(x, amplitude, center, sigma, eta)
+    initial_guess = [1.0, 27.0, 0.1]
+    def convolution_model(x, amplitude, center, sigma):
+        gtaphite_net = lorentzian(x, amplitude, center, sigma)
         return convolve(silicon_peak, gtaphite_net, mode='same')
     params, _ = curve_fit(convolution_model, x, graphite_peak_shift, p0=initial_guess)
-    fwhm = calculate_fwhm_pv(params[2], params[3])
+    fwhm = calculate_fwhm_pv(params[2], 1) # 锁定洛伦兹函数
 
     return fitted_curve, background, graphite_peak, silicon_peak, fwhm
+
+# 拟合数据模块
+def fit_data_sifwhm(x, y):
+    # 使用单峰模型拟合数据
+    p0 = [max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(single_peak, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
+    
+# 拟合峰曲线
+def fit_peak_sifwhm(x, popt):
+    fitted_curve = single_peak(x, *popt)
+    background = popt[5] + popt[6] * x + popt[7] * x**2 + popt[8] * x**3
+    silicon_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
+
+    return fitted_curve, background, silicon_peak

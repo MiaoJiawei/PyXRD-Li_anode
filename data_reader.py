@@ -18,7 +18,7 @@ class XRDMLReader(BaseReader):
             collection = DOMTree.documentElement
             scan_start = float(collection.getElementsByTagName('startPosition')[0].childNodes[0].data)
             scan_end = float(collection.getElementsByTagName('endPosition')[0].childNodes[0].data)
-            if len(collection.getElementsByTagName('counts')) > 1:
+            if collection.getElementsByTagName('counts') != []:
                 data_point = collection.getElementsByTagName('counts')[0].childNodes[0].data.split(" ")
             else:
                 data_point = collection.getElementsByTagName('intensities')[0].childNodes[0].data.split(" ")
