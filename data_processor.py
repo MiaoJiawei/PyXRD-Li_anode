@@ -6,7 +6,6 @@ from scipy.signal import convolve
 from scipy.optimize import curve_fit
 from scipy.optimize import fsolve
 
-
 # 定义 Split-Pearson VII 函数
 def split_pearson_vii(x: np.ndarray, a: float, x0: float, w_L: float, w_R: float, m: float) -> np.ndarray:
     # Split-Pearson VII 函数：两侧具有同形状参数的 Pearson VII 函数
@@ -86,7 +85,7 @@ def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, it
     
     return two_theta_sorted, corrected_intensity
 
-# 双峰模型拟合数据
+# G[002]+Si[111] 双峰模型拟合数据
 def fit_data_d002(x, y):
     p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -96,7 +95,7 @@ def fit_data_d002(x, y):
         print(f"拟合失败: {e}")
         return None
     
-# 双峰曲线计算
+# G[002]+Si[111] 双峰曲线计算
 def fit_peak_d002(x, popt):
     fitted_curve = double_peak(x, *popt)
     background = chebyshev(x, popt[10], popt[11] , popt[12])
@@ -114,7 +113,7 @@ def fit_peak_d002(x, popt):
 
     return fitted_curve, background, graphite_peak, silicon_peak, fwhm
 
-# 单峰模型拟合数据
+# Si[111] 单峰模型拟合数据
 def fit_data_sifwhm(x, y):
     p0 = [max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -124,9 +123,23 @@ def fit_data_sifwhm(x, y):
         print(f"拟合失败: {e}")
         return None
 
-# 单峰曲线计算
+# Si[111] 单峰曲线计算
 def fit_peak_sifwhm(x, popt):
     fitted_curve = single_peak(x, *popt)
     background = chebyshev(x, popt[5], popt[6] , popt[7])
     silicon_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
     return fitted_curve, background, silicon_peak
+
+# OI值 多峰曲线计算
+def fit_data_oi(x, y):
+    # 定义多峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+    def oi_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, a3, x03, w_L3, w_R3, m3, a4, x04, w_L4, w_R4, m4, a5, x05, w_L5, w_R5, m5, c0, c1, c2):
+        # 5个 Split-Pearson VII 峰 + 二阶切比雪夫背景
+        return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) + split_pearson_vii(x, a3, x03, w_L3, w_R3, m3) + split_pearson_vii(x, a4, x04, w_L4, w_R4, m4) + split_pearson_vii(x, a5, x05, w_L5, w_R5, m5) + chebyshev(x, c0, c1, c2))
+    p0 = [max(y), 54.23, 0.1, 0.1, 1.5, max(y), 56.12, 0.1, 0.1, 1.5, max(y), 69.14, 0.1, 0.1, 1.5, max(y), 76.38, 0.1, 0.1, 1.5, max(y), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(oi_peak, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
