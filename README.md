@@ -1,8 +1,12 @@
 # Py-XRD-D002
 ## Introduction
 XRD衍射数据自动分析
+
 石墨+硅内标样：测定石墨材料D002层间距
+
 纳米硅：测定硅[111]晶向晶粒尺寸
+
+石墨：测定OI值（[004]强度/[110]强度）
 
 ## Credits
 - [xylib](http://github.com/wojdyr/xylib/) - 数据读取模块部分使用该项目相关逻辑
