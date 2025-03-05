@@ -3,6 +3,7 @@ import numpy as np
 from numpy.polynomial.chebyshev import Chebyshev
 from scipy.interpolate import interp1d
 from scipy.signal import convolve
+from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 from scipy.optimize import fsolve
 
@@ -76,9 +77,9 @@ def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, it
     two_theta_ka2 = np.degrees(theta_ka2_rad) * 2
     
     corrected_intensity = intensity_sorted.copy()
-    
     for _ in range(iterations):
-        ka1_interp = interp1d(two_theta_sorted, corrected_intensity, kind='linear', bounds_error=False, fill_value=0.0)
+        bg_fill = np.mean(corrected_intensity[:30])
+        ka1_interp = interp1d(two_theta_sorted, corrected_intensity, kind='linear', bounds_error=False, fill_value=bg_fill)
         ka2_intensity = ka1_interp(two_theta_ka2) * 0.5
         ka2_intensity *= valid
         corrected_intensity = np.clip(intensity_sorted - ka2_intensity, 0, None)
@@ -115,13 +116,14 @@ def fit_peak_d002(x, popt):
 
 # Si[111] 单峰模型拟合数据
 def fit_data_sifwhm(x, y):
-    p0 = [max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
+    p0 = [max(y)-min(y), 28.4, 0.3, 0.3, 0.6, 0, 0, 0]
+    y = savgol_filter(y, 25, 3)
     try:
         popt, _ = curve_fit(single_peak, x, y, p0=p0)
-        return popt
+        return popt, y
     except RuntimeError as e:
         print(f"拟合失败: {e}")
-        return None
+        return None, None
 
 # Si[111] 单峰曲线计算
 def fit_peak_sifwhm(x, popt):
