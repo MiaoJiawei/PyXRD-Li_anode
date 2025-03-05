@@ -113,10 +113,11 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, graphite_peak, 6)
                         ws_raw = pushpack_peak(ws_raw, silicon_peak, 7)
                         ws_res.cell(sam_index, 8).value = fwhm_gn
+                else: print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
             elif (scan_x is not None)&(calc_type == "2"):
                 # 计算纳米硅相关
                 corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
-                popt = dp.fit_data_sifwhm(corrected_x, corrected_y)
+                popt, smoothed_y = dp.fit_data_sifwhm(corrected_x, corrected_y)
                 if popt is not None:
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
                     ws_res.cell(sam_index, 2).value = popt[1]  # 计算硅 [111] 峰位
@@ -128,9 +129,10 @@ if __name__ == "__main__":
                         ws_raw.cell(2, 1).value = '2-Theta (deg)'
                         ws_raw.cell(2, 2).value = 'Intensity (A.U.)'
                         ws_raw.cell(2, 3).value = 'Corrected Intensity'
-                        ws_raw.cell(2, 4).value = 'Fitted Curve'
-                        ws_raw.cell(2, 5).value = 'Fitted Background'
-                        ws_raw.cell(2, 6).value = 'Silicon D111 Peak'
+                        ws_raw.cell(2, 4).value = 'Smoothed Intensity'
+                        ws_raw.cell(2, 5).value = 'Fitted Curve'
+                        ws_raw.cell(2, 6).value = 'Fitted Background'
+                        ws_raw.cell(2, 7).value = 'Silicon D111 Peak'
                         ws_raw.cell(1, 1).value = 'Back'
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
                         # 计算拟合结果曲线
@@ -139,9 +141,11 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)
                         ws_raw = pushpack_peak(ws_raw, corrected_y, 3)
-                        ws_raw = pushpack_peak(ws_raw, fitted_curve, 4)
-                        ws_raw = pushpack_peak(ws_raw, background, 5)
-                        ws_raw = pushpack_peak(ws_raw, silicon_peak, 6)
+                        ws_raw = pushpack_peak(ws_raw, smoothed_y, 4)
+                        ws_raw = pushpack_peak(ws_raw, fitted_curve, 5)
+                        ws_raw = pushpack_peak(ws_raw, background, 6)
+                        ws_raw = pushpack_peak(ws_raw, silicon_peak, 7)
+                else: print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
             elif (scan_x is not None)&(calc_type == "3"):
                 # 计算OI值
                 corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
@@ -155,8 +159,9 @@ if __name__ == "__main__":
                     ws_res.cell(sam_index, 6).value = popt[21]  # 计算石墨 [110] 峰位
                     ws_res.cell(sam_index, 7).value = popt[20]  # 计算石墨 [110] 峰高
                     ws_res.cell(sam_index, 8).value = dp.calculate_fwhm_spv(popt[22], popt[23], popt[24])  # 计算石墨 [110] 峰半峰宽
+                else: print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
             else:
-                print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
+                print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，文件读取错误")
         except RuntimeError as e:
             print(f"Failed to fit peaks for sample {sample_name}: {e}")
 
