@@ -52,9 +52,8 @@ if __name__ == "__main__":
         ws_res.cell(1, 7).value = 'Silicon [111] FWHM (deg)'
         ws_res.cell(1, 8).value = 'Graphite [002] FWHM NET.(deg)'
         ws_res.cell(1, 9).value = 'Graphite [002] Lc NET.(Å)'
-        ws_res.cell(1, 10).value = 'Graphite [002] Lc JIS(Å)'
-        if peak_output == "1":
-            ws_res.cell(1, 9).value = 'Graphite [002] FWHM NET.(deg)'
+        ws_res.cell(1, 10).value = 'Graphite [002] FWHM JIS(deg)'
+        ws_res.cell(1, 11).value = 'Graphite [002] Lc JIS(Å)'
     elif calc_type == "2":
         ws_res.cell(1, 1).value = 'Sample Name'
         ws_res.cell(1, 2).value = 'Silicon [111] Peak (deg)'
@@ -93,9 +92,10 @@ if __name__ == "__main__":
                     ws_res.cell(sam_index, 5).value = fwhm_g = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [002] 峰半峰宽
                     ws_res.cell(sam_index, 6).value = popt[6]  # 计算硅 [111] 峰位
                     ws_res.cell(sam_index, 7).value = fwhm_si = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [111] 峰半峰宽
-                    ws_res.cell(sam_index, 8).value = fwhm_gn  # 反卷积计算石墨半峰宽
-                    ws_res.cell(sam_index, 9).value = 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨半峰宽
-                    ws_res.cell(sam_index, 10).value = 1.54056 / (np.radians(dp.calculate_fwhm_jis(fwhm_g, fwhm_si)) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算Lc值 Via. JISR7651:2007
+                    ws_res.cell(sam_index, 8).value = fwhm_gn  # 计算石墨半峰宽 via deconvolution
+                    ws_res.cell(sam_index, 9).value = 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨Lc值 via deconvolution
+                    ws_res.cell(sam_index, 10).value = fwhm_jis = dp.calculate_fwhm_jis(fwhm_g, fwhm_si)  # 计算半峰宽 via JISR7651:2007
+                    ws_res.cell(sam_index, 11).value = 1.54056 / (np.radians(fwhm_jis) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算Lc值 via JISR7651:2007
                     if peak_output == "1":
                         # 初始化拟合结果记录表
                         ws_raw = wb.create_sheet(sample_name)
