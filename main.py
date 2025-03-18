@@ -50,8 +50,11 @@ if __name__ == "__main__":
         ws_res.cell(1, 5).value = 'Graphite [002] FWHM (deg)'
         ws_res.cell(1, 6).value = 'Silicon [111] Peak (deg)'
         ws_res.cell(1, 7).value = 'Silicon [111] FWHM (deg)'
+        ws_res.cell(1, 8).value = 'Graphite [002] FWHM NET.(deg)'
+        ws_res.cell(1, 9).value = 'Graphite [002] Lc NET.(Å)'
+        ws_res.cell(1, 10).value = 'Graphite [002] Lc JIS(Å)'
         if peak_output == "1":
-            ws_res.cell(1, 8).value = 'Graphite D002 FWHM NET.(deg)'
+            ws_res.cell(1, 9).value = 'Graphite [002] FWHM NET.(deg)'
     elif calc_type == "2":
         ws_res.cell(1, 1).value = 'Sample Name'
         ws_res.cell(1, 2).value = 'Silicon [111] Peak (deg)'
@@ -82,13 +85,17 @@ if __name__ == "__main__":
                 corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
                 popt = dp.fit_data_d002(corrected_x, corrected_y)
                 if popt is not None:
+                    fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(corrected_x, popt)  # 计算拟合结果曲线
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
                     ws_res.cell(sam_index, 2).value = d_002 = 1.54056/(2*np.sin(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨 D002 层间距
                     ws_res.cell(sam_index, 3).value = 100 * (3.440 - d_002)/(3.440 - 3.354)  # 计算石墨化度
                     ws_res.cell(sam_index, 4).value = popt[1]  # 计算石墨 [002] 峰位
-                    ws_res.cell(sam_index, 5).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [002] 峰半峰宽
+                    ws_res.cell(sam_index, 5).value = fwhm_g = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [002] 峰半峰宽
                     ws_res.cell(sam_index, 6).value = popt[6]  # 计算硅 [111] 峰位
-                    ws_res.cell(sam_index, 7).value = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [111] 峰半峰宽
+                    ws_res.cell(sam_index, 7).value = fwhm_si = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [111] 峰半峰宽
+                    ws_res.cell(sam_index, 8).value = fwhm_gn  # 反卷积计算石墨半峰宽
+                    ws_res.cell(sam_index, 9).value = 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨半峰宽
+                    ws_res.cell(sam_index, 10).value = 1.54056 / (np.radians(dp.calculate_fwhm_jis(fwhm_g, fwhm_si)) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算Lc值 Via. JISR7651:2007
                     if peak_output == "1":
                         # 初始化拟合结果记录表
                         ws_raw = wb.create_sheet(sample_name)
@@ -102,8 +109,6 @@ if __name__ == "__main__":
                         ws_raw.cell(2, 7).value = 'Silicon [111] Peak'
                         ws_raw.cell(1, 1).value = 'Back'
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
-                        # 计算拟合结果曲线
-                        fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(corrected_x, popt)
                         # 回写拟合结果曲线
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)
@@ -112,7 +117,6 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, background, 5)
                         ws_raw = pushpack_peak(ws_raw, graphite_peak, 6)
                         ws_raw = pushpack_peak(ws_raw, silicon_peak, 7)
-                        ws_res.cell(sam_index, 8).value = fwhm_gn
                 else: 
                     print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
                     
