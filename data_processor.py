@@ -65,6 +65,11 @@ def calculate_fwhm_pv(sigma, eta):
     fwhm_gauss = 2 * sigma * np.sqrt(2 * np.log(2))  # 高斯成分的半峰宽
     return eta * fwhm_lorentz + (1 - eta) * fwhm_gauss
 
+# 计算校正后半峰宽 参考 JIS R 7651:2007（固定参数，有错误）
+def calculate_fwhm_jis(g002_fwhm, si111_fwhm):
+    v = si111_fwhm / g002_fwhm
+    return g002_fwhm * (0.9981266 - 0.0681532 * v - 2.592769 * v**2 + 2.621163 * v**3 - 0.9584715 * v**4)
+
 # 迭代法Kα2校正
 def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
     sort_idx = np.argsort(two_theta)
@@ -113,7 +118,7 @@ def fit_peak_d002(x, popt):
         gtaphite_net = lorentzian(x, amplitude, center, sigma)
         return convolve(silicon_peak, gtaphite_net, mode='same')
     params, _ = curve_fit(convolution_model, x, graphite_peak_shift, p0=initial_guess)
-    fwhm = calculate_fwhm_pv(params[2], 1) # 锁定洛伦兹函数
+    fwhm = 2 * abs(params[2])
 
     return fitted_curve, background, graphite_peak, silicon_peak, fwhm
 
