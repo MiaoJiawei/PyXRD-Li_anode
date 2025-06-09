@@ -23,8 +23,8 @@ XRD衍射数据自动分析
     6. Silicon [111] FWHM (deg) -- 硅[111]半峰宽 (实测值)
     7. Graphite [002] FWHM NET.(deg) -- 石墨[002]半峰宽 (反卷积数值计算)
     8. Graphite [002] Lc NET.(Å) -- 石墨[002]Lc值 (反卷积数值计算)
-    9. Graphite [002] FWHM JIS(deg) -- 石墨[002]半峰宽 (依据JIS R 7651:2027)
-    10.Graphite [002] Lc JIS(Å) -- 石墨[002]Lc值 (依据JIS R 7651:2027)
+    9. Graphite [002] FWHM JIS(deg) -- 石墨[002]半峰宽 (依据JIS R 7651:2007)
+    10.Graphite [002] Lc JIS(Å) -- 石墨[002]Lc值 (依据JIS R 7651:2007)
 
 ### 纳米硅：测定硅[111]晶向晶粒尺寸
 
@@ -48,4 +48,4 @@ XRD衍射数据自动分析
 ## Reference
 - [A Correction for the Alpha-1, Alpha-2 Doublet in tin Measurement of Width of X-ray Diffraction Lines](https://iopscience.iop.org/article/10.1088/0950-7671/25/7/125)
 - [The Synthesis of X‐Ray Spectrometer Line Profiles with Application to Crystallite Size Measurements](https://doi.org/10.1063/1.1721595)
-- [炭素材料の格子定数及び結晶子の大きさ測定方法 JIS R 7651:2027](https://kikakurui.com/r7/R7651-2007-01.html)
+- [炭素材料の格子定数及び結晶子の大きさ測定方法 JIS R 7651:2007](https://kikakurui.com/r7/R7651-2007-01.html)
