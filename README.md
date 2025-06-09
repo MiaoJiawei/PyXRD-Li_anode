@@ -43,7 +43,6 @@ XRD衍射数据自动分析
 
 ## Credits
 - [xylib](http://github.com/wojdyr/xylib/) - 数据读取模块部分使用该项目相关逻辑
-- [deepseek](https://www.deepseek.com/) - 部分代码使用AI构建
 
 ## Reference
 - [A Correction for the Alpha-1, Alpha-2 Doublet in tin Measurement of Width of X-ray Diffraction Lines](https://iopscience.iop.org/article/10.1088/0950-7671/25/7/125)
