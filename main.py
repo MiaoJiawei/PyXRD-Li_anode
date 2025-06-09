@@ -27,7 +27,7 @@ def pushpack_peak(worksheet, cont, col_index, start_row=3):
 
 if __name__ == "__main__":
     # 选择文件类型
-    file_type = input("请选择文件类型 (1: .rd, 2: .xrdml): ").strip()
+    file_type = input("请选择文件类型 (1: Philips.rd, 2: Panalytical.xrdml, 3: Rigaku.raw): ").strip()
     calc_type = input("请选择计算类型 (1: D002, 2: Si_FWHM, 3: OI): ").strip()
     if calc_type == "2":
         smooth_y = input("是否平滑数据 (1: Yes, 2: No): ").strip()
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     for root, _, files in os.walk('.'):
         for f in files:
             ext = os.path.splitext(f)[1].lower()
-            if (file_type == "1" and ext == ".rd") or (file_type == "2" and ext == ".xrdml"):
+            if (file_type == "1" and ext == ".rd") or (file_type == "2" and ext == ".xrdml") or (file_type == "3" and ext == ".raw"):
                 file_list.append(os.path.join(root, f))
 
     # 初始化计算结果汇总表
