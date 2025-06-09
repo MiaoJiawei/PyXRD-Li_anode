@@ -1,6 +1,7 @@
 import xml.dom.minidom
 import xml.parsers.expat
 import numpy as np
+import struct
 
 # 基础数据读取接口
 class BaseReader:
@@ -55,6 +56,33 @@ class PhilipsRDReader(BaseReader):
             
             xcol = np.linspace(x_start + x_step / 2, x_end - x_step / 2, pt_cnt)
             return xcol, ycol
+        
+# 理学 .raw 读取模块
+class RigakuRawReader(BaseReader):
+    @staticmethod
+    def read_data(file_path):
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(3158)
+                f.seek(0x0B92)
+                start_angle = struct.unpack('<f', f.read(4))[0]
+                f.seek(0x0B96)
+                end_angle = struct.unpack('<f', f.read(4))[0]
+                f.seek(0x0B9A)
+                step = struct.unpack('<f', f.read(4))[0]
+                num_points = int(round((end_angle - start_angle) / step)) + 1
+                scan_x = np.arange(start_angle, end_angle + step/2, step)
+
+                f.seek(0x0C56)
+                scan_y = []
+                for _ in range(num_points):
+                    value = struct.unpack('<f', f.read(4))[0]
+                    scan_y.append(value)
+                scan_y = np.array(scan_y)
+            return scan_x, scan_y
+        except RuntimeError as e:
+            print(f"读取失败: {e}")
+            return None, None
 
 # 文件读取工厂函数
 def get_reader(file_type):
@@ -63,5 +91,7 @@ def get_reader(file_type):
         return PhilipsRDReader()
     elif file_type == "2":
         return XRDMLReader()
+    elif file_type == "3":
+        return RigakuRawReader()
     else:
         raise ValueError("无效的文件类型选择")
