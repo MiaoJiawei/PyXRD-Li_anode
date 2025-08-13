@@ -43,7 +43,10 @@ XRD衍射数据自动分析
     7. Graphite [110] FWHM (deg) -- 石墨[110]半峰宽
 
 ## Credits
-- [xylib](http://github.com/wojdyr/xylib/) - 数据读取模块部分使用该项目相关逻辑
+- 数据读取模块部分逻辑使用：[xylib](http://github.com/wojdyr/xylib/)
+- 数据处理模块依赖于数值计算和数学库：[scipy](https://scipy.org/)、[numpy](https://numpy.org/)和[pandas](https://pandas.pydata.org/)
+- 数据可视化模块依赖于函数绘图库：[matplotlib](https://matplotlib.org/)
+- 数据输出模块依赖于excel读写库：[openpyxl](https://openpyxl.readthedocs.io/)
 
 ## Reference
 - [A Correction for the Alpha-1, Alpha-2 Doublet in tin Measurement of Width of X-ray Diffraction Lines](https://iopscience.iop.org/article/10.1088/0950-7671/25/7/125)
