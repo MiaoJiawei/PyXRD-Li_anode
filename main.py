@@ -92,8 +92,7 @@ if __name__ == "__main__":
             scan_x, scan_y = reader.read_data(file_path)
             if (scan_x is not None)&(calc_type == "1"):
                 # 计算石墨 D002 相关
-                corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
-                popt = dp.fit_data_d002(corrected_x, corrected_y)
+                popt = dp.fit_data_d002_raw(scan_x, scan_y)
                 if popt is not None:
                     fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(corrected_x, popt)  # 计算拟合结果曲线
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
@@ -129,6 +128,7 @@ if __name__ == "__main__":
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
                         ws_res.cell(sam_index, 1).hyperlink = "#'%s'!A1" %(sample_name)
                         # 回写拟合结果曲线
+                        corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y, fitted_curve)
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)
                         ws_raw = pushpack_peak(ws_raw, corrected_y, 3)
@@ -138,6 +138,7 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, silicon_peak, 7)
                         ws_raw = pushpack_peak(ws_raw, graphite_peak + background, 8)
                         ws_raw = pushpack_peak(ws_raw, silicon_peak + background, 9)
+                        
                         # 创建绘图
                         plt.figure(figsize=(10, 6))  # 设置图表大小
                         # plt.plot(corrected_x, scan_y, label='Raw Intensity', linewidth=0.5, color='gray', linestyle='--')  # 原始数据
@@ -234,8 +235,7 @@ if __name__ == "__main__":
 
             elif (scan_x is not None)&(calc_type == "3"):
                 # 计算OI值
-                corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y)
-                popt = dp.fit_data_oi(corrected_x, corrected_y)
+                popt = dp.fit_data_oi_raw(scan_x, scan_y)
                 if popt is not None:
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
                     ws_res.cell(sam_index, 2).value = popt[0]/popt[20]  # 计算OI值
@@ -270,7 +270,9 @@ if __name__ == "__main__":
                         ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
                         ws_res.cell(sam_index, 1).hyperlink = "#'%s'!A1" %(sample_name)
                         # 计算拟合结果曲线
-                        fitted_curve, background, g004_peak, si311_peak, si400_peak, si331_peak, g110_peak = dp.fit_peak_oi(corrected_x, popt)
+                        fitted_curve, background, g004_peak, si311_peak, si400_peak, si331_peak, g110_peak = dp.fit_peak_oi(scan_x, popt)
+                        # 计算校正后数据
+                        corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y, fitted_curve)
                         # 回写拟合结果曲线
                         ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
                         ws_raw = pushpack_peak(ws_raw, scan_y, 2)

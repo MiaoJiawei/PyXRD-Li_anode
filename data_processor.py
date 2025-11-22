@@ -7,50 +7,97 @@ from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 from scipy.optimize import fsolve
 
-# 定义 Split-Pearson VII 函数
+"""基础处理工具定义"""
+# 迭代法Kα2校正
+def correct_ka2(two_theta, intensity, intensity_0=None, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
+   
+    theta_rad = np.radians(two_theta / 2)
+    sin_theta_ka1 = np.sin(theta_rad)
+    sin_theta_ka2 = sin_theta_ka1 * (lambda_ka1 / lambda_ka2)
+    
+    valid = sin_theta_ka2 <= 1.0
+    theta_ka2_rad = np.arcsin(sin_theta_ka2, where=valid, out=np.zeros_like(sin_theta_ka2))
+    two_theta_ka2 = np.degrees(theta_ka2_rad) * 2
+    
+    if intensity_0 is not None:
+        corrected_intensity = intensity_0
+    else:
+        corrected_intensity = intensity.copy()
+        
+    for _ in range(iterations):
+        bg_fill = np.mean(corrected_intensity[:30])
+        ka1_interp = interp1d(two_theta, corrected_intensity, kind='linear', bounds_error=False, fill_value=bg_fill)
+        ka2_intensity = ka1_interp(two_theta_ka2) * 0.5
+        ka2_intensity *= valid
+        corrected_intensity = np.clip(intensity - ka2_intensity, 0, None)
+    
+    return two_theta, corrected_intensity
+
+# 回添Kα2强度
+def decorrect_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439):
+    theta_rad = np.radians(two_theta / 2)
+    sin_theta_ka1 = np.sin(theta_rad)
+    sin_theta_ka2 = sin_theta_ka1 * (lambda_ka1 / lambda_ka2)
+    
+    theta_ka2_rad = np.arcsin(sin_theta_ka2)
+    two_theta_ka2 = np.degrees(theta_ka2_rad) * 2
+    
+    ka2_intensity = np.interp(two_theta_ka2, two_theta, intensity) * 0.5
+    decorrected_intensity = intensity + ka2_intensity
+
+    return decorrected_intensity
+
+# 查找峰高数据
+def find_peak_tip(x: np.ndarray, y: np.ndarray, c: float, delt = 0.1):
+    return np.max(y[(x >= c - delt) & (x <= c + delt)])-min(y)
+
+"""数学模型定义"""
+# 定义 Gaussian 函数
+def gaussian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
+    return amplitude * np.exp(-((x - center) / sigma)**2)
+
+# 定义 Lorentzian 函数
+def lorentzian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
+    return amplitude / (1 + ((x - center) / sigma)**2)
+
+# 定义 Pseudo-Voigt 函数：高斯函数和洛伦兹函数的线性组合
+def pseudo_voigt(x: np.ndarray, amplitude: float, center: float, sigma: float, eta: float) -> np.ndarray:
+    return eta * lorentzian(x, amplitude, center, sigma) + (1 - eta) * gaussian(x, amplitude, center, sigma)
+
+# 定义 Split-Pearson VII 函数：两侧具有不同形状参数的 Pearson VII 函数
 def split_pearson_vii(x: np.ndarray, a: float, x0: float, w_L: float, w_R: float, m: float) -> np.ndarray:
-    # Split-Pearson VII 函数：两侧具有同形状参数的 Pearson VII 函数
     return np.where(
         x <= x0,
         a / (1 + (4 * (x - x0)**2 / w_L**2) * (2**(1/m) - 1))**m,
         a / (1 + (4 * (x - x0)**2 / w_R**2) * (2**(1/m) - 1))**m
     )
 
-# 定义 Lorentzian 函数
-def lorentzian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
-    # Lorentzian 函数
-    return amplitude / (1 + ((x - center) / sigma)**2)
-
-# 定义 Gaussian 函数
-def gaussian(x: np.ndarray, amplitude: float, center: float, sigma: float) -> np.ndarray:
-    # Gaussian 函数
-    return amplitude * np.exp(-((x - center) / sigma)**2)
-
-# 定义 Pseudo-Voigt 函数
-def pseudo_voigt(x: np.ndarray, amplitude: float, center: float, sigma: float, eta: float) -> np.ndarray:
-    # Pseudo Voigt 函数：高斯函数和洛伦兹函数的线性组合
-    return eta * lorentzian(x, amplitude, center, sigma) + (1 - eta) * gaussian(x, amplitude, center, sigma)
-
 # 定义二阶切比雪夫多项式
 def chebyshev(x: np.ndarray, c0, c1, c2):
-    # 二阶切比雪夫多项式
     return Chebyshev([c0, c1, c2])(x)
 
-#定义单峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+"""拟合函数定义"""
+# 定义单峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
 def single_peak(x: np.ndarray, a1, x01, w_L1, w_R1, m1, c0, c1, c2):
-    # Split-Pearson VII 峰 + 二阶切比雪夫背景
     return split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + chebyshev(x, c0, c1, c2)
 
-# 定义双峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+# 定义双峰拟合函数（2个Split-Pearson VII 峰 + 二阶切比雪夫背景）
 def double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2):
-    # 两个 Split-Pearson VII 峰 + 二阶切比雪夫背景
     return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) + chebyshev(x, c0, c1, c2))
 
-# 定义多峰拟合函数（Split-Pearson VII 峰 + 二阶切比雪夫背景）
+# 定义双峰直接拟合函数（2个Split-Pearson VII 峰 + 二阶切比雪夫背景 + Kaplha2）
+def double_peak_raw(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2):
+    return decorrect_ka2(x, double_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, c0, c1, c2))
+
+# 定义多峰拟合函数（5个Split-Pearson VII 峰 + 二阶切比雪夫背景）
 def oi_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, a3, x03, w_L3, w_R3, m3, a4, x04, w_L4, w_R4, m4, a5, x05, w_L5, w_R5, m5, c0, c1, c2):
-    # 5个 Split-Pearson VII 峰 + 二阶切比雪夫背景
     return (split_pearson_vii(x, a1, x01, w_L1, w_R1, m1) + split_pearson_vii(x, a2, x02, w_L2, w_R2, m2) + split_pearson_vii(x, a3, x03, w_L3, w_R3, m3) + split_pearson_vii(x, a4, x04, w_L4, w_R4, m4) + split_pearson_vii(x, a5, x05, w_L5, w_R5, m5) + chebyshev(x, c0, c1, c2))
 
+# 定义多峰直接拟合函数（5个Split-Pearson VII 峰 + 二阶切比雪夫背景）
+def oi_peak_raw(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, a3, x03, w_L3, w_R3, m3, a4, x04, w_L4, w_R4, m4, a5, x05, w_L5, w_R5, m5, c0, c1, c2):
+    return decorrect_ka2(x, oi_peak(x, a1, x01, w_L1, w_R1, m1, a2, x02, w_L2, w_R2, m2, a3, x03, w_L3, w_R3, m3, a4, x04, w_L4, w_R4, m4, a5, x05, w_L5, w_R5, m5, c0, c1, c2))
+
+"""计算函数定义"""
 # 计算 Split-Pearson VII 函数的半峰宽
 def calculate_fwhm_spv(w_L, w_R, m):
     a = 1
@@ -70,33 +117,9 @@ def calculate_fwhm_jis(g002_fwhm, si111_fwhm):
     v = si111_fwhm / g002_fwhm
     return g002_fwhm * (0.9981266 - 0.0681532 * v - 2.592769 * v**2 + 2.621163 * v**3 - 0.9584715 * v**4)
 
-# 迭代法Kα2校正
-def correct_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439, iterations=8):
-    sort_idx = np.argsort(two_theta)
-    two_theta_sorted = two_theta[sort_idx]
-    intensity_sorted = intensity[sort_idx]
-    
-    theta_rad = np.radians(two_theta_sorted / 2)
-    sin_theta_ka1 = np.sin(theta_rad)
-    sin_theta_ka2 = sin_theta_ka1 * (lambda_ka1 / lambda_ka2)
-    
-    valid = sin_theta_ka2 <= 1.0
-    theta_ka2_rad = np.arcsin(sin_theta_ka2, where=valid, out=np.zeros_like(sin_theta_ka2))
-    two_theta_ka2 = np.degrees(theta_ka2_rad) * 2
-    
-    corrected_intensity = intensity_sorted.copy()
-    for _ in range(iterations):
-        bg_fill = np.mean(corrected_intensity[:30])
-        ka1_interp = interp1d(two_theta_sorted, corrected_intensity, kind='linear', bounds_error=False, fill_value=bg_fill)
-        ka2_intensity = ka1_interp(two_theta_ka2) * 0.5
-        ka2_intensity *= valid
-        corrected_intensity = np.clip(intensity_sorted - ka2_intensity, 0, None)
-    
-    return two_theta_sorted, corrected_intensity
-
 # G[002]+Si[111] 双峰模型拟合数据
 def fit_data_d002(x, y):
-    p0 = [max(y), 26.5, 0.1, 0.1, 1.5, max(y), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
+    p0 = [find_peak_tip(x, y, 26.5), 26.5, 0.1, 0.1, 1.5, find_peak_tip(x, y, 28.4), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
         popt, _ = curve_fit(double_peak, x, y, p0=p0)
         return popt
@@ -104,6 +127,48 @@ def fit_data_d002(x, y):
         print(f"拟合失败: {e}")
         return None
     
+# G[002]+Si[111] 双峰模型拟合数据(直接拟合)
+def fit_data_d002_raw(x, y):
+    p0 = [find_peak_tip(x, y, 26.5), 26.5, 0.1, 0.1, 1.5, find_peak_tip(x, y, 28.4), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(double_peak_raw, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
+
+# Si[111] 单峰模型拟合数据
+def fit_data_sifwhm(x, y):
+    p0 = [max(y)-min(y), 28.4, 0.3, 0.3, 0.6, 0, 0, 0]
+    y = savgol_filter(y, 25, 3)
+    try:
+        popt, _ = curve_fit(single_peak, x, y, p0=p0)
+        return popt, y
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None, y
+
+# OI值 多峰曲线拟合数据
+def fit_data_oi(x, y):
+    p0 = [find_peak_tip(x, y, 54.23), 54.23, 0.1, 0.1, 1.5, find_peak_tip(x, y, 56.12), 56.12, 0.1, 0.1, 1.5, find_peak_tip(x, y, 69.14), 69.14, 0.1, 0.1, 1.5, find_peak_tip(x, y, 76.38), 76.38, 0.1, 0.1, 1.5, find_peak_tip(x, y, 77.55), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(oi_peak, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
+
+# OI值 多峰曲线拟合数据（直接拟合）
+def fit_data_oi_raw(x, y):
+    p0 = [find_peak_tip(x, y, 54.23), 54.23, 0.1, 0.1, 1.5, find_peak_tip(x, y, 56.12), 56.12, 0.1, 0.1, 1.5, find_peak_tip(x, y, 69.14), 69.14, 0.1, 0.1, 1.5, find_peak_tip(x, y, 76.38), 76.38, 0.1, 0.1, 1.5, find_peak_tip(x, y, 77.55), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(oi_peak_raw, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
+    
+"""曲线计算函数"""
 # G[002]+Si[111] 双峰曲线计算
 def fit_peak_d002(x, popt):
     fitted_curve = double_peak(x, *popt)
@@ -122,17 +187,6 @@ def fit_peak_d002(x, popt):
 
     return fitted_curve, background, graphite_peak, silicon_peak, fwhm
 
-# Si[111] 单峰模型拟合数据
-def fit_data_sifwhm(x, y):
-    p0 = [max(y)-min(y), 28.4, 0.3, 0.3, 0.6, 0, 0, 0]
-    y = savgol_filter(y, 25, 3)
-    try:
-        popt, _ = curve_fit(single_peak, x, y, p0=p0)
-        return popt, y
-    except RuntimeError as e:
-        print(f"拟合失败: {e}")
-        return None, y
-
 # Si[111] 单峰曲线计算
 def fit_peak_sifwhm(x, popt):
     fitted_curve = single_peak(x, *popt)
@@ -140,16 +194,6 @@ def fit_peak_sifwhm(x, popt):
     silicon_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
     return fitted_curve, background, silicon_peak
 
-# OI值 多峰曲线拟合数据
-def fit_data_oi(x, y):
-    p0 = [max(y), 54.23, 0.1, 0.1, 1.5, max(y), 56.12, 0.1, 0.1, 1.5, max(y), 69.14, 0.1, 0.1, 1.5, max(y), 76.38, 0.1, 0.1, 1.5, max(y), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
-    try:
-        popt, _ = curve_fit(oi_peak, x, y, p0=p0)
-        return popt
-    except RuntimeError as e:
-        print(f"拟合失败: {e}")
-        return None
-    
 # OI值 多峰曲线计算
 def fit_peak_oi(x, popt):
     fitted_curve = oi_peak(x, *popt)
