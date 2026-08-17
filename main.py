@@ -56,13 +56,15 @@ if __name__ == "__main__":
         ws_res.cell(1, 2).value = 'D002 (Å)'
         ws_res.cell(1, 3).value = 'G%'
         ws_res.cell(1, 4).value = 'Graphite [002] Peak (deg)'
-        ws_res.cell(1, 5).value = 'Graphite [002] FWHM (deg)'
-        ws_res.cell(1, 6).value = 'Silicon [111] Peak (deg)'
-        ws_res.cell(1, 7).value = 'Silicon [111] FWHM (deg)'
-        ws_res.cell(1, 8).value = 'Graphite [002] FWHM NET.(deg)'
-        ws_res.cell(1, 9).value = 'Graphite [002] Lc NET.(Å)'
-        ws_res.cell(1, 10).value = 'Graphite [002] FWHM JIS(deg)'
-        ws_res.cell(1, 11).value = 'Graphite [002] Lc JIS(Å)'
+        ws_res.cell(1, 5).value = 'Graphite [002] Int. Range (deg)'
+        ws_res.cell(1, 6).value = 'Graphite [002] FWHM (deg)'
+        ws_res.cell(1, 7).value = 'Silicon [111] Peak (deg)'
+        ws_res.cell(1, 8).value = 'Silicon [111] Int. Range (deg)'
+        ws_res.cell(1, 9).value = 'Silicon [111] FWHM (deg)'
+        ws_res.cell(1, 10).value = 'Graphite [002] FWHM NET.(deg)'
+        ws_res.cell(1, 11).value = 'Graphite [002] Lc NET.(Å)'
+        ws_res.cell(1, 12).value = 'Graphite [002] FWHM JIS(deg)'
+        ws_res.cell(1, 13).value = 'Graphite [002] Lc JIS(Å)'
     elif calc_type == "2":
         ws_res.cell(1, 1).value = 'Sample Name'
         ws_res.cell(1, 2).value = 'Silicon [111] Peak (deg)'
@@ -73,11 +75,13 @@ if __name__ == "__main__":
         ws_res.cell(1, 3).value = 'Dual D004 (Å)'
         ws_res.cell(1, 4).value = 'G%'
         ws_res.cell(1, 5).value = 'Graphite [004] Peak (deg)'
-        ws_res.cell(1, 6).value = 'Graphite [004] Intensity (counts)'
-        ws_res.cell(1, 7).value = 'Graphite [004] FWHM (deg)'
-        ws_res.cell(1, 8).value = 'Graphite [110] Peak (deg)'
-        ws_res.cell(1, 9).value = 'Graphite [110] Intensity (counts)'
-        ws_res.cell(1, 10).value = 'Graphite [110] FWHM (deg)'
+        ws_res.cell(1, 6).value = 'Graphite [004] Int. Range (deg)'
+        ws_res.cell(1, 7).value = 'Graphite [004] Intensity (counts)'
+        ws_res.cell(1, 8).value = 'Graphite [004] FWHM (deg)'
+        ws_res.cell(1, 9).value = 'Graphite [110] Peak (deg)'
+        ws_res.cell(1, 10).value = 'Graphite [110] Int. Range (deg)'
+        ws_res.cell(1, 11).value = 'Graphite [110] Intensity (counts)'
+        ws_res.cell(1, 12).value = 'Graphite [110] FWHM (deg)'
 
     # 初始化辅助变量
     sam_list = []
@@ -86,26 +90,45 @@ if __name__ == "__main__":
     # 数据处理模块
     for file_path in file_list:
         sample_name = os.path.splitext(os.path.basename(file_path))[0]
+        out_dir = os.path.dirname(file_path) or '.'  # 输出目录与源文件同级（子目录读取则图片保存回子目录）
         sam_list.append(sample_name)
         sam_index += 1
         try:
             scan_x, scan_y = reader.read_data(file_path)
+            if scan_x is not None:
+                # 按扫描范围过滤：仅处理与当前计算类型峰位区间匹配的文件，避免 OI/D002 数据混用时拟合失败
+                if calc_type == "1":
+                    # D002：需覆盖石墨[002]~26.5° 与硅[111]~28.4°
+                    range_ok = (scan_x.min() <= 26.5) and (scan_x.max() >= 28.4)
+                elif calc_type == "2":
+                    # Si_FWHM：需覆盖硅[111]~28.4°
+                    range_ok = (scan_x.min() <= 28.4) and (scan_x.max() >= 28.4)
+                else:
+                    # OI+D004：需覆盖石墨[004]~54.2° 与石墨[110]~77.6°
+                    range_ok = (scan_x.min() <= 54.5) and (scan_x.max() >= 77.0)
+                if not range_ok:
+                    print(f"跳过 {sample_name}: 扫描范围 {scan_x.min():.1f}°-{scan_x.max():.1f}° 与计算类型不匹配")
+                    continue
             if (scan_x is not None)&(calc_type == "1"):
                 # 计算石墨 D002 相关
                 popt = dp.fit_data_d002_raw(scan_x, scan_y)
                 if popt is not None:
-                    fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(corrected_x, popt)  # 计算拟合结果曲线
+                    fitted_curve, background, graphite_peak, silicon_peak, fwhm_gn = dp.fit_peak_d002(scan_x, popt)  # 计算拟合结果曲线
+                    g_peak_pos, (g_lo, g_hi) = dp.calculate_centroid(scan_x, graphite_peak, center=popt[1], return_window=True)  # 石墨 [002] 峰位（拟合曲线质心）及积分范围
+                    si_peak_pos, (si_lo, si_hi) = dp.calculate_centroid(scan_x, silicon_peak, center=popt[6], return_window=True)  # 硅 [111] 峰位（拟合曲线质心）及积分范围
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
-                    ws_res.cell(sam_index, 2).value = d_002 = 1.54056/(2*np.sin(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨 D002 层间距
+                    ws_res.cell(sam_index, 2).value = d_002 = 1.54056/(2*np.sin(np.radians((28.443 - si_peak_pos + g_peak_pos)/2)))  # 计算石墨 D002 层间距
                     ws_res.cell(sam_index, 3).value = 100 * (3.440 - d_002)/(3.440 - 3.354)  # 计算石墨化度
-                    ws_res.cell(sam_index, 4).value = popt[1]  # 计算石墨 [002] 峰位
-                    ws_res.cell(sam_index, 5).value = fwhm_g = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [002] 峰半峰宽
-                    ws_res.cell(sam_index, 6).value = popt[6]  # 计算硅 [111] 峰位
-                    ws_res.cell(sam_index, 7).value = fwhm_si = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [111] 峰半峰宽
-                    ws_res.cell(sam_index, 8).value = fwhm_gn  # 计算石墨半峰宽 via deconvolution
-                    ws_res.cell(sam_index, 9).value = 0.89 * 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算石墨Lc值 via deconvolution
-                    ws_res.cell(sam_index, 10).value = fwhm_jis = dp.calculate_fwhm_jis(fwhm_g, fwhm_si)  # 计算半峰宽 via JISR7651:2007
-                    ws_res.cell(sam_index, 11).value = 0.89 * 1.54056 / (np.radians(fwhm_jis) * np.cos(np.radians((28.443 - popt[6] + popt[1])/2)))  # 计算Lc值 via JISR7651:2007
+                    ws_res.cell(sam_index, 4).value = g_peak_pos  # 计算石墨 [002] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 5).value = f"{g_lo:.3f}~{g_hi:.3f}"  # 石墨 [002] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 6).value = fwhm_g = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [002] 峰半峰宽
+                    ws_res.cell(sam_index, 7).value = si_peak_pos  # 计算硅 [111] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 8).value = f"{si_lo:.3f}~{si_hi:.3f}"  # 硅 [111] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 9).value = fwhm_si = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [111] 峰半峰宽
+                    ws_res.cell(sam_index, 10).value = fwhm_gn  # 计算石墨半峰宽 via deconvolution
+                    ws_res.cell(sam_index, 11).value = 0.89 * 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians((28.443 - si_peak_pos + g_peak_pos)/2)))  # 计算石墨Lc值 via deconvolution
+                    ws_res.cell(sam_index, 12).value = fwhm_jis = dp.calculate_fwhm_jis(fwhm_g, fwhm_si)  # 计算半峰宽 via JISR7651:2007
+                    ws_res.cell(sam_index, 13).value = 0.89 * 1.54056 / (np.radians(fwhm_jis) * np.cos(np.radians((28.443 - si_peak_pos + g_peak_pos)/2)))  # 计算Lc值 via JISR7651:2007
                     if peak_output == "1":
                         # 初始化拟合结果记录表
                         if trim_filename == "1":
@@ -147,8 +170,8 @@ if __name__ == "__main__":
                         plt.plot(corrected_x, background, label='Background', linewidth=0.5, color='green', linestyle='--')  # 背景
                         plt.plot(corrected_x, graphite_peak + background, label='Graphite [002] Peak', linewidth=0.5, color='orange')  # 石墨峰
                         plt.plot(corrected_x, silicon_peak + background, label='Silicon [111] Peak', linewidth=0.5, color='purple')  # 硅峰
-                        plt.axvline(popt[1], color='orange', linestyle='--') # 石墨峰
-                        plt.axvline(popt[6], color='purple', linestyle='--') # 硅峰
+                        plt.axvline(g_peak_pos, color='orange', linestyle='--') # 石墨峰（质心）
+                        plt.axvline(si_peak_pos, color='purple', linestyle='--') # 硅峰（质心）
 
                         # 美化图表
                         plt.title(sample_name, fontsize=14, fontweight='bold')  # 标题
@@ -159,8 +182,8 @@ if __name__ == "__main__":
                         plt.legend(loc='upper left', fontsize=10)  # 图例
                         plt.tight_layout()  # 自动调整布局
 
-                        # 保存图表
-                        plt.savefig(f'{sample_name}_plot.png', dpi=300)  # 保存为PNG文件
+                        # 保存图表（保存到源文件所在目录）
+                        plt.savefig(os.path.join(out_dir, f'{sample_name}_plot.png'), dpi=300)  # 保存为PNG文件
                         plt.close()  # 关闭图表，释放内存
 
 
@@ -176,8 +199,11 @@ if __name__ == "__main__":
                 else:
                     popt = dp.fit_data_sifwhm(corrected_x, corrected_y)
                 if popt is not None:
+                    # 计算硅 [111] 峰位（拟合曲线质心）
+                    silicon_peak_net = dp.split_pearson_vii(corrected_x, popt[0], popt[1], popt[2], popt[3], popt[4])
+                    si_peak_pos = dp.calculate_centroid(corrected_x, silicon_peak_net, center=popt[1])
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
-                    ws_res.cell(sam_index, 2).value = popt[1]  # 计算硅 [111] 峰位
+                    ws_res.cell(sam_index, 2).value = si_peak_pos  # 计算硅 [111] 峰位（拟合曲线质心）
                     ws_res.cell(sam_index, 3).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算硅 [111] 峰半峰宽
                     if peak_output == "1":
                         # 初始化拟合结果记录表
@@ -237,16 +263,26 @@ if __name__ == "__main__":
                 # 计算OI值
                 popt = dp.fit_data_oi_raw(scan_x, scan_y)
                 if popt is not None:
+                    # 计算各净峰曲线、峰位（质心）及峰面积
+                    g004_peak = dp.split_pearson_vii(scan_x, popt[0], popt[1], popt[2], popt[3], popt[4])
+                    g110_peak = dp.split_pearson_vii(scan_x, popt[20], popt[21], popt[22], popt[23], popt[24])
+                    si311_peak = dp.split_pearson_vii(scan_x, popt[5], popt[6], popt[7], popt[8], popt[9])
+                    g004_pos, (g004_lo, g004_hi) = dp.calculate_centroid(scan_x, g004_peak, center=popt[1], return_window=True)  # 石墨 [004] 峰位（拟合曲线质心）及积分范围
+                    g110_pos, (g110_lo, g110_hi) = dp.calculate_centroid(scan_x, g110_peak, center=popt[21], return_window=True)  # 石墨 [110] 峰位（拟合曲线质心）及积分范围
+                    si311_pos = dp.calculate_centroid(scan_x, si311_peak, center=popt[6])  # 硅 [311] 峰位（拟合曲线质心）
+                    oi_value = dp.calculate_peak_area(scan_x, g004_peak)/dp.calculate_peak_area(scan_x, g110_peak)  # 计算OI值（峰面积比）
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
-                    ws_res.cell(sam_index, 2).value = popt[0]/popt[20]  # 计算OI值
-                    ws_res.cell(sam_index, 3).value = d_004x2 = 2*(1.54056/(2*np.sin(np.radians((56.12 - popt[6] + popt[1])/2))))  # 计算石墨 D004 层间距
+                    ws_res.cell(sam_index, 2).value = oi_value  # 计算OI值（峰面积比）
+                    ws_res.cell(sam_index, 3).value = d_004x2 = 2*(1.54056/(2*np.sin(np.radians((56.12 - si311_pos + g004_pos)/2))))  # 计算石墨 D004 层间距
                     ws_res.cell(sam_index, 4).value = 100 * (3.440 - d_004x2)/(3.440 - 3.354)  # 计算石墨化度
-                    ws_res.cell(sam_index, 5).value = popt[1]  # 计算石墨 [004] 峰位
-                    ws_res.cell(sam_index, 6).value = popt[0]  # 计算石墨 [004] 峰高
-                    ws_res.cell(sam_index, 7).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [004] 峰半峰宽
-                    ws_res.cell(sam_index, 8).value = popt[21]  # 计算石墨 [110] 峰位
-                    ws_res.cell(sam_index, 9).value = popt[20]  # 计算石墨 [110] 峰高
-                    ws_res.cell(sam_index, 10).value = dp.calculate_fwhm_spv(popt[22], popt[23], popt[24])  # 计算石墨 [110] 峰半峰宽
+                    ws_res.cell(sam_index, 5).value = g004_pos  # 计算石墨 [004] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 6).value = f"{g004_lo:.3f}~{g004_hi:.3f}"  # 石墨 [004] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 7).value = popt[0]  # 计算石墨 [004] 峰高
+                    ws_res.cell(sam_index, 8).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [004] 峰半峰宽
+                    ws_res.cell(sam_index, 9).value = g110_pos  # 计算石墨 [110] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 10).value = f"{g110_lo:.3f}~{g110_hi:.3f}"  # 石墨 [110] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 11).value = popt[20]  # 计算石墨 [110] 峰高
+                    ws_res.cell(sam_index, 12).value = dp.calculate_fwhm_spv(popt[22], popt[23], popt[24])  # 计算石墨 [110] 峰半峰宽
                     if peak_output == "1":
                         # 初始化拟合结果记录表
                         if trim_filename == "1":
@@ -296,8 +332,8 @@ if __name__ == "__main__":
                         plt.plot(corrected_x, si400_peak + background, label='Silicon [400] Peak', linewidth=0.5, color='gray')  # 硅峰[400]
                         plt.plot(corrected_x, si331_peak + background, label='Silicon [331] Peak', linewidth=0.5, color='gray')  # 硅峰[331]
                         plt.plot(corrected_x, g110_peak + background, label='Graphite [110] Peak', linewidth=0.5, color='cyan')  # 石墨[110]
-                        plt.axvline(popt[1], color='orange', linestyle='--', linewidth=0.5) # 石墨[004]
-                        plt.axvline(popt[6], color='purple', linestyle='--', linewidth=0.5) # 硅峰[311]
+                        plt.axvline(g004_pos, color='orange', linestyle='--', linewidth=0.5) # 石墨[004]（质心）
+                        plt.axvline(si311_pos, color='purple', linestyle='--', linewidth=0.5) # 硅峰[311]（质心）
 
                         # 美化图表
                         plt.title(sample_name, fontsize=14, fontweight='bold')  # 标题
@@ -308,8 +344,8 @@ if __name__ == "__main__":
                         plt.legend(loc='upper right', fontsize=8)  # 图例
                         plt.tight_layout()  # 自动调整布局
 
-                        # 保存图表
-                        plt.savefig(f'{sample_name}_plot.png', dpi=300)  # 保存为PNG文件
+                        # 保存图表（保存到源文件所在目录）
+                        plt.savefig(os.path.join(out_dir, f'{sample_name}_plot.png'), dpi=300)  # 保存为PNG文件
                         plt.close()  # 关闭图表，释放内存
                 else: print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
             else:

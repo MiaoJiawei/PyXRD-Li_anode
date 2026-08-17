@@ -49,7 +49,10 @@ def decorrect_ka2(two_theta, intensity, lambda_ka1=1.54056, lambda_ka2=1.54439):
 
 # 查找峰高数据
 def find_peak_tip(x: np.ndarray, y: np.ndarray, c: float, delt = 0.1):
-    return np.max(y[(x >= c - delt) & (x <= c + delt)])-min(y)
+    mask = (x >= c - delt) & (x <= c + delt)
+    if not np.any(mask):
+        return float(np.max(y) - np.min(y))
+    return np.max(y[mask]) - np.min(y)
 
 """数学模型定义"""
 # 定义 Gaussian 函数
@@ -106,6 +109,74 @@ def calculate_fwhm_spv(w_L, w_R, m):
     right_x = fsolve(lambda x: split_pearson_vii(x, a, x0, w_L, w_R, m) - (a / 2), x0 + abs(w_R))[0]
     return right_x - left_x
 
+# 兼容 numpy 1.x (trapz) / 2.x (trapezoid) 的梯形积分
+def _trapz(y, x):
+    trapz_func = getattr(np, 'trapezoid', None) or np.trapz
+    return trapz_func(y, x)
+
+# 计算拟合峰曲线的质心（强度加权平均位置，2θ）
+# 参照 IUCr 重心法（Centroid Method）：在背景扣除后的净峰曲线上，
+# 以峰中心对称的角窗口内积分，避免全扫描范围非对称截断引入的系统性偏差。
+# 采用迭代收敛：以最大强度位置（或给定 center）为初始窗口中心计算质心，
+# 再将前次计算出的质心作为新的窗口中心重复积分，
+# 每次迭代同时重新计算窗口半宽（净峰降至峰高 1% 处两侧较大者 ×1.02），
+# 直至两次计算的角度变化 < tol（默认 0.001°）。
+def calculate_centroid(x: np.ndarray, peak_curve: np.ndarray,
+                       center: float = None, window: float = None,
+                       tol: float = 0.001, max_iter: int = 100,
+                       return_window: bool = False):
+    nan_result = (float('nan'), (float('nan'), float('nan')))
+    y = np.clip(peak_curve, 0, None)
+    if center is None:
+        center = float(x[int(np.argmax(y))])
+    peak_max = float(np.max(y)) if y.size else 0.0
+    if peak_max <= 0:
+        return nan_result if return_window else float('nan')
+
+    # 峰超过峰高 1% 的有效范围（用于每次迭代自动推导积分窗口半宽）
+    xs = x[y >= 0.01 * peak_max]
+    has_xs = xs.size > 0
+
+    # 迭代：将前次计算出的质心作为新的积分窗口中值，
+    # 且每次迭代重新计算窗口半宽（对称半宽取两侧较大者 ×1.02），直至角度变化小于 tol
+    centroid = center
+    cur_window = window
+    for _ in range(max_iter):
+        if window is None:
+            if not has_xs:
+                break
+            cur_window = max(centroid - xs.min(), xs.max() - centroid) * 1.02
+        if cur_window <= 0:
+            break
+        mask = (x >= centroid - cur_window) & (x <= centroid + cur_window)
+        yw, xw = y[mask], x[mask]
+        if yw.size < 2:
+            break
+        mass = _trapz(yw, xw)
+        if mass <= 0:
+            break
+        new_centroid = _trapz(xw * yw, xw) / mass
+        if not np.isfinite(new_centroid):
+            break
+        if abs(new_centroid - centroid) < tol:
+            centroid = new_centroid
+            break
+        centroid = new_centroid
+
+    if return_window:
+        if window is None:
+            if not has_xs:
+                return centroid, (float('nan'), float('nan'))
+            cur_window = max(centroid - xs.min(), xs.max() - centroid) * 1.02
+        if cur_window <= 0:
+            return centroid, (float('nan'), float('nan'))
+        return centroid, (centroid - cur_window, centroid + cur_window)
+    return centroid
+
+# 计算拟合峰曲线的面积
+def calculate_peak_area(x: np.ndarray, peak_curve: np.ndarray) -> float:
+    return _trapz(np.clip(peak_curve, 0, None), x)
+
 # 计算 Pseudo-Voigt 函数的半峰宽
 def calculate_fwhm_pv(sigma, eta):
     fwhm_lorentz = 2 * sigma  # 洛伦兹成分的半峰宽
@@ -143,10 +214,10 @@ def fit_data_sifwhm(x, y):
     y = savgol_filter(y, 25, 3)
     try:
         popt, _ = curve_fit(single_peak, x, y, p0=p0)
-        return popt, y
+        return popt
     except RuntimeError as e:
         print(f"拟合失败: {e}")
-        return None, y
+        return None
 
 # OI值 多峰曲线拟合数据
 def fit_data_oi(x, y):
