@@ -25,17 +25,59 @@ def pushpack_peak(worksheet, cont, col_index, start_row=3):
         j += 1
     return worksheet
 
+# 直接输出扫描数据表（2θ / 强度两列 CSV，同名字段与工作表保持一致）
+def save_scan_csv(csv_path, scan_x, scan_y):
+    np.savetxt(csv_path,
+               np.column_stack([np.asarray(scan_x, dtype=float), np.asarray(scan_y, dtype=float)]),
+               delimiter=',', header='2-Theta (deg),Intensity (A.U.)', comments='',
+               fmt='%.6f,%.4f')
+    return csv_path
+
+# 统一绘图模块：各计算类型与「直接输出数据」共用同一套图表样式
+def render_plot(sample_name, series, out_dir, xlim=None, vlines=(), legend_loc='upper left', legend_fontsize=10):
+    """绘制并保存 {sample_name}_plot.png
+
+    series: (x, y, 图例标签, plt.plot 关键字参数) 列表，按顺序绘制（决定图例顺序）
+    vlines: (x 位置, plt.axvline 关键字参数) 列表，用于标注峰位质心
+    """
+    plt.figure(figsize=(10, 6))  # 设置图表大小
+    for x, y, label, style in series:
+        plt.plot(x, y, label=label, **style)
+    for x_pos, style in vlines:
+        plt.axvline(x_pos, **style)
+
+    # 美化图表
+    plt.title(sample_name, fontsize=14, fontweight='bold')  # 标题
+    plt.xlabel('2Theta (°)', fontsize=12)  # X轴标签
+    if xlim is not None:
+        plt.xlim(*xlim)
+    plt.ylabel('Intensity (Counts)', fontsize=12)  # Y轴标签
+    plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # 网格线
+    plt.legend(loc=legend_loc, fontsize=legend_fontsize)  # 图例
+    plt.tight_layout()  # 自动调整布局
+
+    # 保存图表（保存到源文件所在目录）
+    plt.savefig(os.path.join(out_dir, f'{sample_name}_plot.png'), dpi=300)  # 保存为PNG文件
+    plt.close()  # 关闭图表，释放内存
+
 if __name__ == "__main__":
     # 选择文件类型
-    file_type = input("请选择文件类型 (1: Philips.rd, 2: Panalytical.xrdml, 3: Rigaku.raw): ").strip()
-    calc_type = input("请选择计算类型 (1: D002, 2: Si_FWHM, 3: OI+D004): ").strip()
+    file_type = input("请选择文件类型 (1: Philips.rd, 2: Panalytical.xrdml, 3: Rigaku.raw, 4: Bruker.raw(V4)): ").strip()
+    calc_type = input("请选择计算类型 (0: 直接输出数据, 1: D002, 2: Si_FWHM, 3: OI+D004, 4: D004): ").strip()
+    if calc_type not in ("0", "1", "2", "3", "4"):
+        raise ValueError("无效的计算类型选择")
     if calc_type == "2":
         smooth_y = input("是否平滑数据 (1: Yes, 2: No): ").strip()
-    peak_output = input("是否输出拟合结果 (1: Yes, 2: No): ").strip()
-    if peak_output == "1":
-        trim_filename = input("是否裁切文件名 (1: Yes, 2: No): ").strip()
-    else:
+    if calc_type == "0":
+        # 0：直接输出数据，不涉及拟合，无需询问是否输出拟合结果/裁切文件名
+        peak_output = "0"
         trim_filename = "0"
+    else:
+        peak_output = input("是否输出拟合结果 (1: Yes, 2: No): ").strip()
+        if peak_output == "1":
+            trim_filename = input("是否裁切文件名 (1: Yes, 2: No): ").strip()
+        else:
+            trim_filename = "0"
     reader = dr.get_reader(file_type)
 
     # 抓取文件清单
@@ -43,7 +85,7 @@ if __name__ == "__main__":
     for root, _, files in os.walk('.'):
         for f in files:
             ext = os.path.splitext(f)[1].lower()
-            if (file_type == "1" and ext == ".rd") or (file_type == "2" and ext == ".xrdml") or (file_type == "3" and ext == ".raw"):
+            if (file_type == "1" and ext == ".rd") or (file_type == "2" and ext == ".xrdml") or (file_type == "3" and ext == ".raw") or (file_type == "4" and ext == ".raw"):
                 file_list.append(os.path.join(root, f))
 
     # 初始化计算结果汇总表
@@ -51,7 +93,10 @@ if __name__ == "__main__":
     ws_res = wb.active
     ws_res.title = 'Sample list'
     ws_res.freeze_panes = 'A2'
-    if calc_type == "1":
+    if calc_type == "0":
+        ws_res.cell(1, 1).value = 'Sample Name'
+        ws_res.cell(1, 2).value = 'Data File'
+    elif calc_type == "1":
         ws_res.cell(1, 1).value = 'Sample Name'
         ws_res.cell(1, 2).value = 'D002 (Å)'
         ws_res.cell(1, 3).value = 'G%'
@@ -82,6 +127,20 @@ if __name__ == "__main__":
         ws_res.cell(1, 10).value = 'Graphite [110] Int. Range (deg)'
         ws_res.cell(1, 11).value = 'Graphite [110] Intensity (counts)'
         ws_res.cell(1, 12).value = 'Graphite [110] FWHM (deg)'
+    elif calc_type == "4":
+        ws_res.cell(1, 1).value = 'Sample Name'
+        ws_res.cell(1, 2).value = 'Dual D004 (Å)'
+        ws_res.cell(1, 3).value = 'G%'
+        ws_res.cell(1, 4).value = 'Graphite [004] Peak (deg)'
+        ws_res.cell(1, 5).value = 'Graphite [004] Int. Range (deg)'
+        ws_res.cell(1, 6).value = 'Graphite [004] Intensity (counts)'
+        ws_res.cell(1, 7).value = 'Graphite [004] FWHM (deg)'
+        ws_res.cell(1, 8).value = 'Graphite [004] FWHM NET.(deg)'
+        ws_res.cell(1, 9).value = 'Graphite [004] Lc NET.(Å)'
+        ws_res.cell(1, 10).value = 'Silicon [311] Peak (deg)'
+        ws_res.cell(1, 11).value = 'Silicon [311] Int. Range (deg)'
+        ws_res.cell(1, 12).value = 'Silicon [311] Intensity (counts)'
+        ws_res.cell(1, 13).value = 'Silicon [311] FWHM (deg)'
 
     # 初始化辅助变量
     sam_list = []
@@ -103,13 +162,28 @@ if __name__ == "__main__":
                 elif calc_type == "2":
                     # Si_FWHM：需覆盖硅[111]~28.4°
                     range_ok = (scan_x.min() <= 28.4) and (scan_x.max() >= 28.4)
-                else:
+                elif calc_type == "3":
                     # OI+D004：需覆盖石墨[004]~54.2° 与石墨[110]~77.6°
                     range_ok = (scan_x.min() <= 54.5) and (scan_x.max() >= 77.0)
+                elif calc_type == "4":
+                    # D004：需覆盖石墨[004]~54.6° 与硅[311]~56.12°
+                    range_ok = (scan_x.min() <= 54.5) and (scan_x.max() >= 56.1)
+                else:
+                    # 0：直接输出数据，不限扫描范围
+                    range_ok = True
                 if not range_ok:
                     print(f"跳过 {sample_name}: 扫描范围 {scan_x.min():.1f}°-{scan_x.max():.1f}° 与计算类型不匹配")
                     continue
-            if (scan_x is not None)&(calc_type == "1"):
+            if (scan_x is not None) and (calc_type == "0"):
+                # 0：直接输出数据（不做拟合，将扫描数据导出为同名 CSV 并绘图）
+                csv_path = save_scan_csv(os.path.join(out_dir, f'{sample_name}.csv'), scan_x, scan_y)
+                ws_res.cell(sam_index, 1).value = sample_name  # 样品名
+                ws_res.cell(sam_index, 2).value = os.path.relpath(csv_path)  # 输出数据文件路径（相对当前目录）
+                render_plot(sample_name,
+                            [(scan_x, scan_y, 'Intensity', {'linewidth': 0.5, 'color': 'blue'})],
+                            out_dir, legend_loc='upper right')
+                print(f"{sample_name}: 已输出 {csv_path} 与 {sample_name}_plot.png")
+            elif (scan_x is not None)&(calc_type == "1"):
                 # 计算石墨 D002 相关
                 popt = dp.fit_data_d002_raw(scan_x, scan_y)
                 if popt is not None:
@@ -162,29 +236,22 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, graphite_peak + background, 8)
                         ws_raw = pushpack_peak(ws_raw, silicon_peak + background, 9)
                         
-                        # 创建绘图
-                        plt.figure(figsize=(10, 6))  # 设置图表大小
-                        # plt.plot(corrected_x, scan_y, label='Raw Intensity', linewidth=0.5, color='gray', linestyle='--')  # 原始数据
-                        plt.plot(corrected_x, corrected_y, label='Corrected Intensity', linewidth=0.5, color='blue')  # 校正后数据
-                        plt.plot(corrected_x, fitted_curve, label='Fitted Curve', linewidth=0.5, color='red')  # 拟合曲线
-                        plt.plot(corrected_x, background, label='Background', linewidth=0.5, color='green', linestyle='--')  # 背景
-                        plt.plot(corrected_x, graphite_peak + background, label='Graphite [002] Peak', linewidth=0.5, color='orange')  # 石墨峰
-                        plt.plot(corrected_x, silicon_peak + background, label='Silicon [111] Peak', linewidth=0.5, color='purple')  # 硅峰
-                        plt.axvline(g_peak_pos, color='orange', linestyle='--') # 石墨峰（质心）
-                        plt.axvline(si_peak_pos, color='purple', linestyle='--') # 硅峰（质心）
-
-                        # 美化图表
-                        plt.title(sample_name, fontsize=14, fontweight='bold')  # 标题
-                        plt.xlabel('2Theta (°)', fontsize=12)  # X轴标签
-                        plt.xlim(25, 29)
-                        plt.ylabel('Intensity (Counts)', fontsize=12)  # Y轴标签
-                        plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # 网格线
-                        plt.legend(loc='upper left', fontsize=10)  # 图例
-                        plt.tight_layout()  # 自动调整布局
-
-                        # 保存图表（保存到源文件所在目录）
-                        plt.savefig(os.path.join(out_dir, f'{sample_name}_plot.png'), dpi=300)  # 保存为PNG文件
-                        plt.close()  # 关闭图表，释放内存
+                        # 创建绘图（复用统一绘图模块）
+                        render_plot(
+                            sample_name,
+                            [
+                                (corrected_x, corrected_y, 'Corrected Intensity', {'linewidth': 0.5, 'color': 'blue'}),  # 校正后数据
+                                (corrected_x, fitted_curve, 'Fitted Curve', {'linewidth': 0.5, 'color': 'red'}),  # 拟合曲线
+                                (corrected_x, background, 'Background', {'linewidth': 0.5, 'color': 'green', 'linestyle': '--'}),  # 背景
+                                (corrected_x, graphite_peak + background, 'Graphite [002] Peak', {'linewidth': 0.5, 'color': 'orange'}),  # 石墨[002]
+                                (corrected_x, silicon_peak + background, 'Silicon [111] Peak', {'linewidth': 0.5, 'color': 'purple'}),  # 硅峰[111]
+                            ],
+                            out_dir,
+                            xlim=(25, 29),
+                            vlines=[(g_peak_pos, {'color': 'orange', 'linestyle': '--'}),  # 石墨峰（质心）
+                                    (si_peak_pos, {'color': 'purple', 'linestyle': '--'})],  # 硅峰（质心）
+                            legend_loc='upper left'
+                        )
 
 
                 else: 
@@ -321,33 +388,100 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, si331_peak, 9)
                         ws_raw = pushpack_peak(ws_raw, g110_peak, 10)
 
-                        # 创建绘图
-                        plt.figure(figsize=(10, 6))  # 设置图表大小
-                        # plt.plot(corrected_x, scan_y, label='Raw Intensity', linewidth=0.5, color='gray', linestyle='--')  # 原始数据
-                        plt.plot(corrected_x, corrected_y, label='Corrected Intensity', linewidth=0.5, color='blue')  # 校正后数据
-                        plt.plot(corrected_x, fitted_curve, label='Fitted Curve', linewidth=0.5, color='red')  # 拟合曲线
-                        plt.plot(corrected_x, background, label='Background', linewidth=0.5, color='green', linestyle='--')  # 背景
-                        plt.plot(corrected_x, g004_peak + background, label='Graphite [004] Peak', linewidth=0.5, color='orange')  # 石墨[004]
-                        plt.plot(corrected_x, si311_peak + background, label='Silicon [311] Peak', linewidth=0.5, color='purple')  # 硅峰[311]
-                        plt.plot(corrected_x, si400_peak + background, label='Silicon [400] Peak', linewidth=0.5, color='gray')  # 硅峰[400]
-                        plt.plot(corrected_x, si331_peak + background, label='Silicon [331] Peak', linewidth=0.5, color='gray')  # 硅峰[331]
-                        plt.plot(corrected_x, g110_peak + background, label='Graphite [110] Peak', linewidth=0.5, color='cyan')  # 石墨[110]
-                        plt.axvline(g004_pos, color='orange', linestyle='--', linewidth=0.5) # 石墨[004]（质心）
-                        plt.axvline(si311_pos, color='purple', linestyle='--', linewidth=0.5) # 硅峰[311]（质心）
-
-                        # 美化图表
-                        plt.title(sample_name, fontsize=14, fontweight='bold')  # 标题
-                        plt.xlabel('2Theta (°)', fontsize=12)  # X轴标签
-                        plt.xlim(50, 80)
-                        plt.ylabel('Intensity (Counts)', fontsize=12)  # Y轴标签
-                        plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)  # 网格线
-                        plt.legend(loc='upper right', fontsize=8)  # 图例
-                        plt.tight_layout()  # 自动调整布局
-
-                        # 保存图表（保存到源文件所在目录）
-                        plt.savefig(os.path.join(out_dir, f'{sample_name}_plot.png'), dpi=300)  # 保存为PNG文件
-                        plt.close()  # 关闭图表，释放内存
+                        # 创建绘图（复用统一绘图模块）
+                        render_plot(
+                            sample_name,
+                            [
+                                (corrected_x, corrected_y, 'Corrected Intensity', {'linewidth': 0.5, 'color': 'blue'}),  # 校正后数据
+                                (corrected_x, fitted_curve, 'Fitted Curve', {'linewidth': 0.5, 'color': 'red'}),  # 拟合曲线
+                                (corrected_x, background, 'Background', {'linewidth': 0.5, 'color': 'green', 'linestyle': '--'}),  # 背景
+                                (corrected_x, g004_peak + background, 'Graphite [004] Peak', {'linewidth': 0.5, 'color': 'orange'}),  # 石墨[004]
+                                (corrected_x, si311_peak + background, 'Silicon [311] Peak', {'linewidth': 0.5, 'color': 'purple'}),  # 硅峰[311]
+                                (corrected_x, si400_peak + background, 'Silicon [400] Peak', {'linewidth': 0.5, 'color': 'gray'}),  # 硅峰[400]
+                                (corrected_x, si331_peak + background, 'Silicon [331] Peak', {'linewidth': 0.5, 'color': 'gray'}),  # 硅峰[331]
+                                (corrected_x, g110_peak + background, 'Graphite [110] Peak', {'linewidth': 0.5, 'color': 'cyan'}),  # 石墨[110]
+                            ],
+                            out_dir,
+                            xlim=(50, 80),
+                            vlines=[(g004_pos, {'color': 'orange', 'linestyle': '--', 'linewidth': 0.5}),  # 石墨[004]（质心）
+                                    (si311_pos, {'color': 'purple', 'linestyle': '--', 'linewidth': 0.5})],  # 硅峰[311]（质心）
+                            legend_loc='upper right', legend_fontsize=8
+                        )
                 else: print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
+            elif (scan_x is not None)&(calc_type == "4"):
+                # 计算 D004 层间距（G[004]+Si[311] 双峰拟合，适用于约 52~58° 扫描）
+                popt = dp.fit_data_d004_raw(scan_x, scan_y)
+                if popt is not None:
+                    # 计算拟合结果曲线
+                    fitted_curve, background, g004_peak, si311_peak, fwhm_gn = dp.fit_peak_d004(scan_x, popt)
+                    g004_pos, (g004_lo, g004_hi) = dp.calculate_centroid(scan_x, g004_peak, center=popt[1], return_window=True)  # 石墨 [004] 峰位（拟合曲线质心）及积分范围
+                    si311_pos, (si311_lo, si311_hi) = dp.calculate_centroid(scan_x, si311_peak, center=popt[6], return_window=True)  # 硅 [311] 峰位（拟合曲线质心）及积分范围
+                    g004_corrected = 56.121 - si311_pos + g004_pos  # 以硅 [311] 为内标校正后的石墨 [004] 2θ
+                    ws_res.cell(sam_index, 1).value = sample_name  # 样品名
+                    ws_res.cell(sam_index, 2).value = d_004x2 = 2*(1.54056/(2*np.sin(np.radians(g004_corrected/2))))  # 计算石墨 D004 层间距（×2 便于与 D002 对比）
+                    ws_res.cell(sam_index, 3).value = 100 * (3.440 - d_004x2)/(3.440 - 3.354)  # 计算石墨化度
+                    ws_res.cell(sam_index, 4).value = g004_pos  # 计算石墨 [004] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 5).value = f"{g004_lo:.3f}~{g004_hi:.3f}"  # 石墨 [004] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 6).value = popt[0]  # 计算石墨 [004] 峰高
+                    ws_res.cell(sam_index, 7).value = dp.calculate_fwhm_spv(popt[2], popt[3], popt[4])  # 计算石墨 [004] 峰半峰宽
+                    ws_res.cell(sam_index, 8).value = fwhm_gn  # 计算石墨 [004] 半峰宽 via deconvolution
+                    ws_res.cell(sam_index, 9).value = 0.89 * 1.54056 / (np.radians(fwhm_gn) * np.cos(np.radians(g004_corrected/2)))  # 计算石墨 Lc 值 via deconvolution
+                    ws_res.cell(sam_index, 10).value = si311_pos  # 计算硅 [311] 峰位（拟合曲线质心）
+                    ws_res.cell(sam_index, 11).value = f"{si311_lo:.3f}~{si311_hi:.3f}"  # 硅 [311] 质心积分范围（deg）
+                    ws_res.cell(sam_index, 12).value = popt[5]  # 计算硅 [311] 峰高
+                    ws_res.cell(sam_index, 13).value = dp.calculate_fwhm_spv(popt[7], popt[8], popt[9])  # 计算硅 [311] 峰半峰宽
+                    if peak_output == "1":
+                        # 初始化拟合结果记录表
+                        if trim_filename == "1":
+                            try:
+                                sample_name = sample_name.split()[-3]
+                            except:
+                                pass
+                        ws_raw = wb.create_sheet(sample_name)
+                        ws_raw.freeze_panes = 'A3'
+                        ws_raw.cell(2, 1).value = '2-Theta (deg)'
+                        ws_raw.cell(2, 2).value = 'Intensity (A.U.)'
+                        ws_raw.cell(2, 3).value = 'Corrected Intensity'
+                        ws_raw.cell(2, 4).value = 'Fitted Curve'
+                        ws_raw.cell(2, 5).value = 'Fitted Background'
+                        ws_raw.cell(2, 6).value = 'Graphite [004] Net. Peak'
+                        ws_raw.cell(2, 7).value = 'Silicon [311] Net. Peak'
+                        ws_raw.cell(2, 8).value = 'Graphite [004] Peak'
+                        ws_raw.cell(2, 9).value = 'Silicon [311] Peak'
+                        ws_raw.cell(1, 1).value = 'Back'
+                        ws_raw.cell(1, 1).hyperlink = "#'Sample list'!A%s" % str(sam_index)
+                        ws_res.cell(sam_index, 1).hyperlink = "#'%s'!A1" %(sample_name)
+                        # 计算校正后数据
+                        corrected_x, corrected_y = dp.correct_ka2(scan_x, scan_y, fitted_curve)
+                        # 回写拟合结果曲线
+                        ws_raw = pushpack_peak(ws_raw, corrected_x, 1)
+                        ws_raw = pushpack_peak(ws_raw, scan_y, 2)
+                        ws_raw = pushpack_peak(ws_raw, corrected_y, 3)
+                        ws_raw = pushpack_peak(ws_raw, fitted_curve, 4)
+                        ws_raw = pushpack_peak(ws_raw, background, 5)
+                        ws_raw = pushpack_peak(ws_raw, g004_peak, 6)
+                        ws_raw = pushpack_peak(ws_raw, si311_peak, 7)
+                        ws_raw = pushpack_peak(ws_raw, g004_peak + background, 8)
+                        ws_raw = pushpack_peak(ws_raw, si311_peak + background, 9)
+
+                        # 创建绘图（复用统一绘图模块）
+                        render_plot(
+                            sample_name,
+                            [
+                                (corrected_x, corrected_y, 'Corrected Intensity', {'linewidth': 0.5, 'color': 'blue'}),  # 校正后数据
+                                (corrected_x, fitted_curve, 'Fitted Curve', {'linewidth': 0.5, 'color': 'red'}),  # 拟合曲线
+                                (corrected_x, background, 'Background', {'linewidth': 0.5, 'color': 'green', 'linestyle': '--'}),  # 背景
+                                (corrected_x, g004_peak + background, 'Graphite [004] Peak', {'linewidth': 0.5, 'color': 'orange'}),  # 石墨[004]
+                                (corrected_x, si311_peak + background, 'Silicon [311] Peak', {'linewidth': 0.5, 'color': 'purple'}),  # 硅峰[311]
+                            ],
+                            out_dir,
+                            xlim=(52, 58),
+                            vlines=[(g004_pos, {'color': 'orange', 'linestyle': '--', 'linewidth': 0.5}),  # 石墨[004]（质心）
+                                    (si311_pos, {'color': 'purple', 'linestyle': '--', 'linewidth': 0.5})],  # 硅峰[311]（质心）
+                            legend_loc='upper right', legend_fontsize=8
+                        )
+                else:
+                    print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
             else:
                 print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，文件读取错误")
         except RuntimeError as e:

@@ -47,6 +47,8 @@ Desktop.ini
 xrd_processed.xlsx
 *xrd_processed.xlsx
 *_plot.png
+*.csv
+*.rd
 
 # Jupyter Notebook 临时文件
 .ipynb_checkpoints/

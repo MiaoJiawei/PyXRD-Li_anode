@@ -115,12 +115,6 @@ def _trapz(y, x):
     return trapz_func(y, x)
 
 # 计算拟合峰曲线的质心（强度加权平均位置，2θ）
-# 参照 IUCr 重心法（Centroid Method）：在背景扣除后的净峰曲线上，
-# 以峰中心对称的角窗口内积分，避免全扫描范围非对称截断引入的系统性偏差。
-# 采用迭代收敛：以最大强度位置（或给定 center）为初始窗口中心计算质心，
-# 再将前次计算出的质心作为新的窗口中心重复积分，
-# 每次迭代同时重新计算窗口半宽（净峰降至峰高 1% 处两侧较大者 ×1.02），
-# 直至两次计算的角度变化 < tol（默认 0.001°）。
 def calculate_centroid(x: np.ndarray, peak_curve: np.ndarray,
                        center: float = None, window: float = None,
                        tol: float = 0.001, max_iter: int = 100,
@@ -188,7 +182,7 @@ def calculate_fwhm_jis(g002_fwhm, si111_fwhm):
     v = si111_fwhm / g002_fwhm
     return g002_fwhm * (0.9981266 - 0.0681532 * v - 2.592769 * v**2 + 2.621163 * v**3 - 0.9584715 * v**4)
 
-# G[002]+Si[111] 双峰模型拟合数据
+# G[002]+Si[111] 双峰拟合数据
 def fit_data_d002(x, y):
     p0 = [find_peak_tip(x, y, 26.5), 26.5, 0.1, 0.1, 1.5, find_peak_tip(x, y, 28.4), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -198,7 +192,7 @@ def fit_data_d002(x, y):
         print(f"拟合失败: {e}")
         return None
     
-# G[002]+Si[111] 双峰模型拟合数据(直接拟合)
+# G[002]+Si[111] 双峰拟合数据(直接拟合)
 def fit_data_d002_raw(x, y):
     p0 = [find_peak_tip(x, y, 26.5), 26.5, 0.1, 0.1, 1.5, find_peak_tip(x, y, 28.4), 28.4, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -208,7 +202,7 @@ def fit_data_d002_raw(x, y):
         print(f"拟合失败: {e}")
         return None
 
-# Si[111] 单峰模型拟合数据
+# Si[111] 单峰拟合数据
 def fit_data_sifwhm(x, y):
     p0 = [max(y)-min(y), 28.4, 0.3, 0.3, 0.6, 0, 0, 0]
     y = savgol_filter(y, 25, 3)
@@ -219,7 +213,7 @@ def fit_data_sifwhm(x, y):
         print(f"拟合失败: {e}")
         return None
 
-# OI值 多峰曲线拟合数据
+# OI值 多峰拟合数据
 def fit_data_oi(x, y):
     p0 = [find_peak_tip(x, y, 54.23), 54.23, 0.1, 0.1, 1.5, find_peak_tip(x, y, 56.12), 56.12, 0.1, 0.1, 1.5, find_peak_tip(x, y, 69.14), 69.14, 0.1, 0.1, 1.5, find_peak_tip(x, y, 76.38), 76.38, 0.1, 0.1, 1.5, find_peak_tip(x, y, 77.55), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -229,7 +223,7 @@ def fit_data_oi(x, y):
         print(f"拟合失败: {e}")
         return None
 
-# OI值 多峰曲线拟合数据（直接拟合）
+# OI值 多峰拟合数据（直接拟合）
 def fit_data_oi_raw(x, y):
     p0 = [find_peak_tip(x, y, 54.23), 54.23, 0.1, 0.1, 1.5, find_peak_tip(x, y, 56.12), 56.12, 0.1, 0.1, 1.5, find_peak_tip(x, y, 69.14), 69.14, 0.1, 0.1, 1.5, find_peak_tip(x, y, 76.38), 76.38, 0.1, 0.1, 1.5, find_peak_tip(x, y, 77.55), 77.55, 0.1, 0.1, 1.5, 0, 0, 0]
     try:
@@ -238,7 +232,17 @@ def fit_data_oi_raw(x, y):
     except RuntimeError as e:
         print(f"拟合失败: {e}")
         return None
-    
+
+# G[004]+Si[311] 双峰模型拟合数据（直接拟合）
+def fit_data_d004_raw(x, y):
+    p0 = [find_peak_tip(x, y, 54.6), 54.6, 0.1, 0.1, 1.5, find_peak_tip(x, y, 56.12), 56.12, 0.1, 0.1, 1.5, 0, 0, 0]
+    try:
+        popt, _ = curve_fit(double_peak_raw, x, y, p0=p0)
+        return popt
+    except RuntimeError as e:
+        print(f"拟合失败: {e}")
+        return None
+
 """曲线计算函数"""
 # G[002]+Si[111] 双峰曲线计算
 def fit_peak_d002(x, popt):
@@ -276,3 +280,21 @@ def fit_peak_oi(x, popt):
     background = chebyshev(x, popt[25], popt[26] , popt[27])
 
     return fitted_curve, background, g004_peak, si311_peak, si400_peak, si331_peak, g110_peak
+
+# G[004]+Si[311] 双峰曲线计算
+def fit_peak_d004(x, popt):
+    fitted_curve = double_peak(x, *popt)
+    background = chebyshev(x, popt[10], popt[11], popt[12])
+    graphite_peak = split_pearson_vii(x, popt[0], popt[1], popt[2], popt[3], popt[4])
+    silicon_peak = split_pearson_vii(x, popt[5], popt[6], popt[7], popt[8], popt[9])
+
+    # 反卷积计算净石墨半峰宽（以 Si[311] 峰形为仪器函数，做法同 fit_peak_d002）
+    graphite_peak_shift = split_pearson_vii(x, popt[5], popt[6], popt[2], popt[3], popt[4])
+    initial_guess = [1.0, 54.6, 0.1]
+    def convolution_model(x, amplitude, center, sigma):
+        graphite_net = lorentzian(x, amplitude, center, sigma)
+        return convolve(silicon_peak, graphite_net, mode='same')
+    params, _ = curve_fit(convolution_model, x, graphite_peak_shift, p0=initial_guess)
+    fwhm = 2 * abs(params[2])
+
+    return fitted_curve, background, graphite_peak, silicon_peak, fwhm
