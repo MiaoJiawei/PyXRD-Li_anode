@@ -301,6 +301,21 @@ if __name__ == "__main__":
                         ws_raw = pushpack_peak(ws_raw, fitted_curve, 5)
                         ws_raw = pushpack_peak(ws_raw, background, 6)
                         ws_raw = pushpack_peak(ws_raw, silicon_peak, 7)
+
+                        # 创建绘图（复用统一绘图模块）
+                        render_plot(
+                            sample_name,
+                            [
+                                (corrected_x, corrected_y, 'Corrected Intensity', {'linewidth': 0.5, 'color': 'blue'}),  # 校正后数据
+                                (corrected_x, fitted_curve, 'Fitted Curve', {'linewidth': 0.5, 'color': 'red'}),  # 拟合曲线
+                                (corrected_x, background, 'Background', {'linewidth': 0.5, 'color': 'green', 'linestyle': '--'}),  # 背景
+                                (corrected_x, silicon_peak + background, 'Silicon [111] Peak', {'linewidth': 0.5, 'color': 'purple'}),  # 硅峰[111]
+                            ],
+                            out_dir,
+                            xlim=(25, 32),
+                            vlines=[(si_peak_pos, {'color': 'purple', 'linestyle': '--'})],  # 硅峰（质心）
+                            legend_loc='upper left'
+                        )
                 else:
                     print(f"Failed to fit peaks for sample {sample_name}: 拟合失败，未返回参数")
                     ws_res.cell(sam_index, 1).value = sample_name  # 样品名
